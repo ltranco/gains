@@ -1,0 +1,294 @@
+@import "tailwindcss";
+
+/*
+ * Theming is three-way: system (default), light, dark. Every colour is a CSS custom
+ * property so the system option is real rather than a bolt-on — `@media
+ * (prefers-color-scheme: dark)` supplies the default, and a `data-theme` attribute on <html>
+ * overrides it in either direction. The attribute has to win over the media query, hence
+ * the explicit `[data-theme="light"]` block: without it, choosing light on a dark OS would
+ * do nothing.
+ *
+ * Reference point is Linear — dense, high-contrast text, hairline borders, elevation only on
+ * overlays, exactly one accent used only for the primary action and focus.
+ */
+
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #fafafa;
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.07);
+
+  --text: #16161a;
+  --text-muted: #6b6f76;
+  --text-faint: #9a9ea6;
+
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.16);
+
+  --accent: #5e6ad2;
+  --accent-hover: #525fc9;
+  --accent-text: #ffffff;
+
+  --danger: #d64545;
+
+  --overlay: rgba(0, 0, 0, 0.32);
+  --shadow-sheet: 0 -1px 2px rgba(0, 0, 0, 0.04), 0 -12px 32px rgba(0, 0, 0, 0.12);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.14);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0e10;
+    --bg-subtle: #141518;
+    --bg-elevated: #1a1c1f;
+    --bg-hover: rgba(255, 255, 255, 0.055);
+    --bg-active: rgba(255, 255, 255, 0.09);
+
+    --text: #f2f3f5;
+    --text-muted: #9a9ea6;
+    --text-faint: #6b6f76;
+
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.17);
+
+    --accent: #6e79d6;
+    --accent-hover: #7c86dd;
+    --accent-text: #ffffff;
+
+    --danger: #e06c6c;
+
+    --overlay: rgba(0, 0, 0, 0.6);
+    --shadow-sheet: 0 -1px 2px rgba(0, 0, 0, 0.3), 0 -12px 32px rgba(0, 0, 0, 0.5);
+    --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.5);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d0e10;
+  --bg-subtle: #141518;
+  --bg-elevated: #1a1c1f;
+  --bg-hover: rgba(255, 255, 255, 0.055);
+  --bg-active: rgba(255, 255, 255, 0.09);
+
+  --text: #f2f3f5;
+  --text-muted: #9a9ea6;
+  --text-faint: #6b6f76;
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.17);
+
+  --accent: #6e79d6;
+  --accent-hover: #7c86dd;
+  --accent-text: #ffffff;
+
+  --danger: #e06c6c;
+
+  --overlay: rgba(0, 0, 0, 0.6);
+  --shadow-sheet: 0 -1px 2px rgba(0, 0, 0, 0.3), 0 -12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-active: var(--bg-active);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-text);
+  --color-danger: var(--danger);
+
+  /* --font-inter is injected by next/font; the stack behind it covers a failed font load. */
+  --font-sans: var(--font-inter), ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  /* Stop iOS Safari inflating text in landscape. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* The log is a vertical column; horizontal drift is always a bug. */
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+}
+
+/*
+ * Numbers are the content here, not decoration, so they get their own face: JetBrains Mono
+ * at 700, tightened up. Inter's figures are handsome but soft, and a column of loads wants
+ * to read as gauge markings — flat terminals, even widths, no apology.
+ */
+.nums {
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: -0.02em;
+}
+
+/* Secondary numerics — timestamps, set counts — same face, dialled back so they sit behind
+   the values they annotate. */
+.nums-quiet {
+  font-family: var(--font-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.011em;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Number inputs: kill the spinners. The steppers we draw ourselves are reachable with a
+   thumb, which the native ones are not. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.sheet-panel {
+  animation: sheet-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sheet-scrim {
+  animation: fade-in 180ms ease-out;
+}
+
+/* Empty-state barbell: one slow, complete rep. Hand-rolled rather than a Lottie runtime —
+   it inherits the theme's currentColor, which a baked animation JSON can't. */
+@keyframes rep-lift {
+  0%,
+  100% {
+    transform: translateY(3.5px);
+  }
+  45% {
+    transform: translateY(-3.5px);
+  }
+}
+
+/* Plates splay a touch at the top of the rep, as a loaded bar would flex. */
+@keyframes bar-flex {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  45% {
+    transform: scaleY(0.93);
+  }
+}
+
+@keyframes ground-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scaleX(1);
+  }
+  45% {
+    opacity: 0.22;
+    transform: scaleX(0.84);
+  }
+}
+
+.rep-lift {
+  animation: rep-lift 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.bar-flex {
+  animation: bar-flex 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transform-origin: center;
+}
+.ground-pulse {
+  animation: ground-pulse 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  transform-origin: center;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-in {
+  animation: toast-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-panel,
+  .sheet-scrim,
+  .rep-lift,
+  .bar-flex,
+  .ground-pulse,
+  .toast-in {
+    animation: none;
+  }
+}
