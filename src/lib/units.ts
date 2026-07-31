@@ -15,9 +15,28 @@ export const lbToKg = (lb: number): number => lb / LB_PER_KG
 export const weightUnit = (u: UnitSystem): string => (u === "metric" ? "kg" : "lb")
 export const distanceUnit = (u: UnitSystem): string => (u === "metric" ? "km" : "mi")
 
-/** Trim trailing zeros: 14 not 14.0, 14.5 not 14.50. */
+/**
+ * Trim trailing zeros and group thousands: 14 not 14.0, 14.5 not 14.50, 1,250 not 1250.
+ * Grouping matters more than it looks — `10000` and `1000` are one glance apart in a mono
+ * column, `10,000` and `1,000` are not.
+ */
 function trim(n: number, places: number): string {
-  return Number(n.toFixed(places)).toString()
+  const rounded = Number(n.toFixed(places))
+  const [whole = "0", frac] = Math.abs(rounded).toString().split(".")
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  const sign = rounded < 0 ? "-" : ""
+  return `${sign}${grouped}${frac ? `.${frac}` : ""}`
+}
+
+/** Whole counts — reps — with the same grouping, so 1,000 never renders as 1000. */
+export function formatCount(n: number | undefined): string {
+  if (n === undefined) return "—"
+  return trim(n, 0)
+}
+
+/** Strips grouping commas before parsing, so a value we rendered can be typed back in. */
+function numeric(input: string): number {
+  return Number(input.trim().replace(/,/g, ""))
 }
 
 /** Canonical kg → display string, without a unit suffix. */
@@ -44,7 +63,7 @@ export function formatLoad(
 
 /** Display number → canonical kg. Returns undefined for unparseable input. */
 export function parseWeight(input: string, u: UnitSystem): number | undefined {
-  const n = Number(input.trim())
+  const n = numeric(input)
   if (!Number.isFinite(n) || n < 0) return undefined
   return u === "metric" ? n : lbToKg(n)
 }
@@ -63,7 +82,7 @@ export function formatDistance(m: number | undefined, u: UnitSystem): string {
 }
 
 export function parseDistance(input: string, u: UnitSystem): number | undefined {
-  const n = Number(input.trim())
+  const n = numeric(input)
   if (!Number.isFinite(n) || n < 0) return undefined
   return u === "metric" ? kmToM(n) : kmToM(n / MI_PER_KM)
 }
@@ -98,7 +117,7 @@ export function parseDuration(input: string): number | undefined {
 }
 
 export function parseReps(input: string): number | undefined {
-  const n = Number(input.trim())
+  const n = numeric(input)
   if (!Number.isInteger(n) || n <= 0) return undefined
   return n
 }

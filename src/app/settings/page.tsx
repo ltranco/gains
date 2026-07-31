@@ -40,7 +40,7 @@ export default function Settings() {
       <SubPageBar title="Settings" />
 
       <div className="flex flex-col">
-        <Section label="Theme" note="System follows whatever your phone or laptop is set to.">
+        <Section label="Theme">
           <Segmented<ThemeChoice>
             value={hydrated ? state.prefs.theme : "system"}
             options={[
@@ -52,10 +52,7 @@ export default function Settings() {
           />
         </Section>
 
-        <Section
-          label="Units"
-          note="Stored in kilograms and metres either way — this only changes what's on screen."
-        >
+        <Section label="Units">
           <Segmented<UnitSystem>
             value={hydrated ? state.prefs.units : "metric"}
             options={[
@@ -66,7 +63,7 @@ export default function Settings() {
           />
         </Section>
 
-        <Section label="Clock" note="How set times read in the day view.">
+        <Section label="Clock">
           <Segmented<ClockFormat>
             value={hydrated ? state.prefs.clock : "24h"}
             options={[
@@ -79,10 +76,7 @@ export default function Settings() {
 
         <RemoteSection />
 
-        <Section
-          label="File"
-          note={`${state.sets.length} ${state.sets.length === 1 ? "set" : "sets"} logged, held in this browser.`}
-        >
+        <Section label="File">
           <div className="flex gap-2">
             <Button onClick={download}>Export JSON</Button>
             <Button onClick={() => fileRef.current?.click()}>Import JSON</Button>
@@ -100,15 +94,6 @@ export default function Settings() {
           />
           {fileStatus && <Status>{fileStatus}</Status>}
         </Section>
-
-        <div className="px-4 py-5">
-          <p className="text-[12px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
-            Everything lives in this browser&apos;s local storage. Safari clears
-            script-writable storage after seven days without a visit, so either set a sync URL
-            above or export now and then. Adding this to your home screen also takes it out of
-            that bucket.
-          </p>
-        </div>
       </div>
     </main>
   )
@@ -172,10 +157,7 @@ function RemoteSection() {
   const ready = config.url.trim().length > 0
 
   return (
-    <Section
-      label="Sync"
-      note="A URL of your own that holds the log. GET reads it, PUT writes it, last write wins."
-    >
+    <Section label="Sync">
       <div className="flex flex-col gap-2">
         <Field
           label="URL"
@@ -207,11 +189,6 @@ function RemoteSection() {
       {config.lastSyncedAt && !status && (
         <Status>Last synced {new Date(config.lastSyncedAt).toLocaleString()}.</Status>
       )}
-
-      <p className="mt-2 text-[12px] leading-relaxed" style={{ color: "var(--text-faint)" }}>
-        Pulling replaces everything logged in this browser. The token is stored here in plain
-        text — anyone holding this device can read it.
-      </p>
     </Section>
   )
 }
@@ -249,23 +226,10 @@ function Field({
   )
 }
 
-function Section({
-  label,
-  note,
-  children,
-}: {
-  label: string
-  note?: string
-  children: React.ReactNode
-}) {
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <section className="border-b px-4 py-4">
-      <h2 className="text-[14px] font-semibold">{label}</h2>
-      {note && (
-        <p className="mt-0.5 mb-2.5 text-[12px]" style={{ color: "var(--text-faint)" }}>
-          {note}
-        </p>
-      )}
+      <h2 className="mb-2.5 text-[14px] font-semibold">{label}</h2>
       {children}
     </section>
   )

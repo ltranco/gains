@@ -8,6 +8,7 @@ import type { Exercise, SetEntry, UnitSystem } from "@/lib/types"
 import {
   distanceUnit,
   distanceValue,
+  formatCount,
   formatDuration,
   parseDistance,
   parseDuration,
@@ -322,10 +323,10 @@ export function summarise(set: SetEntry, ex: Exercise, units: UnitSystem): strin
               ? "BW"
               : `+${weightValue(set.weightKg, units)} ${weightUnit(units)}`
             : `${weightValue(set.weightKg, units)} ${weightUnit(units)}`
-      return `${load} × ${set.reps ?? "—"}`
+      return `${load} × ${formatCount(set.reps)}`
     }
     case "reps":
-      return `${set.reps ?? "—"} reps`
+      return `${formatCount(set.reps)} reps`
     case "duration":
       return formatDuration(set.durationSec)
     case "distance": {

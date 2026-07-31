@@ -1,26 +1,27 @@
 "use client"
 
-import { formatDayLabel, isFuture, shiftDay, todayKey } from "@/lib/date"
+import { formatDayLabel, isFuture, shiftDay } from "@/lib/date"
 import { ChevronLeft, ChevronRight, Plus } from "./icons"
 
 /**
- * Everything you touch mid-session, docked to the bottom edge: the day you're logging
- * against and the button that starts a set. On a phone this is the only part of the screen
- * your thumb reaches without regripping, which is why the date moved down here from the
- * header.
+ * Everything you touch mid-session, docked to the bottom edge — on a phone this is the only
+ * part of the screen a thumb reaches without regripping.
+ *
+ * The layout is fixed: two arrows and a date, always the same three slots. A "Today" button
+ * that appeared and vanished depending on the selected day shifted everything each time it
+ * came and went; Today now lives inside the date picker, where it belongs.
  */
 export function BottomBar({
   date,
-  onChangeDate,
+  onStep,
+  onOpenPicker,
   onAdd,
 }: {
   date: string
-  onChangeDate: (next: string) => void
+  onStep: (days: number) => void
+  onOpenPicker: () => void
   onAdd: () => void
 }) {
-  const atToday = date === todayKey()
-  const nextDay = shiftDay(date, 1)
-
   return (
     <div
       className="sticky bottom-0 z-20 border-t"
@@ -30,48 +31,25 @@ export function BottomBar({
       }}
     >
       <div className="flex items-center gap-1 px-2 pt-2 pb-1.5">
-        <StepButton label="Previous day" onClick={() => onChangeDate(shiftDay(date, -1))}>
+        <StepButton label="Previous day" onClick={() => onStep(-1)}>
           <ChevronLeft size={18} />
         </StepButton>
 
-        <div className="min-w-0 flex-1 text-center">
-          {/*
-            A native date input under an invisible overlay: iOS gives its own wheel and
-            desktop its own picker, both better than a hand-rolled calendar. The visible label
-            sits on top so it can say "Today" rather than a raw date.
-          */}
-          <label className="relative inline-flex cursor-pointer items-baseline justify-center px-2 py-1">
-            <span className="text-[14px] font-semibold">{formatDayLabel(date)}</span>
-            <input
-              type="date"
-              value={date}
-              max={todayKey()}
-              onChange={(e) => e.target.value && onChangeDate(e.target.value)}
-              aria-label="Pick a date"
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            />
-          </label>
-        </div>
+        <button
+          type="button"
+          onClick={onOpenPicker}
+          className="min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-[14px] font-semibold transition-colors hover:bg-[var(--bg-hover)]"
+        >
+          {formatDayLabel(date)}
+        </button>
 
         <StepButton
           label="Next day"
-          onClick={() => onChangeDate(nextDay)}
-          disabled={isFuture(nextDay)}
+          onClick={() => onStep(1)}
+          disabled={isFuture(shiftDay(date, 1))}
         >
           <ChevronRight size={18} />
         </StepButton>
-
-        {/* Only earns its space once you've navigated away from today. */}
-        {!atToday && (
-          <button
-            type="button"
-            onClick={() => onChangeDate(todayKey())}
-            className="rounded-md px-2 py-1.5 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
-            style={{ color: "var(--accent)" }}
-          >
-            Today
-          </button>
-        )}
       </div>
 
       <div className="px-3 pt-1">
@@ -82,7 +60,7 @@ export function BottomBar({
           style={{ background: "var(--accent)", color: "var(--accent-text)" }}
         >
           <Plus size={17} />
-          Add exercise
+          Add
         </button>
       </div>
     </div>

@@ -56,9 +56,6 @@ export function EmptyDay({ isToday }: { isToday: boolean }) {
       <p className="mt-5 text-[14px] font-medium" style={{ color: "var(--text-muted)" }}>
         Nothing logged {isToday ? "today" : "this day"}
       </p>
-      <p className="mt-1 text-[13px]" style={{ color: "var(--text-faint)" }}>
-        Add your first exercise below.
-      </p>
     </div>
   )
 }

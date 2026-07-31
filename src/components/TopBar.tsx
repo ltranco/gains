@@ -3,7 +3,7 @@
 import Link from "next/link"
 
 import { Logo } from "./Logo"
-import { ChevronLeft, Settings } from "./icons"
+import { ChevronLeft, Cog } from "./icons"
 
 /** Identity left, settings right. No controls beyond that — everything you touch while
  *  logging now lives at the bottom of the screen, in thumb range. */
@@ -20,7 +20,7 @@ export function TopBar() {
         className="-mr-1 flex size-9 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
         style={{ color: "var(--text-muted)" }}
       >
-        <Settings size={17} />
+        <Cog size={17} />
       </Link>
     </header>
   )

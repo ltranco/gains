@@ -36,7 +36,8 @@ export function NumberField({
   const id = useId()
 
   const nudge = (delta: number) => {
-    const current = Number(value)
+    // Strip grouping: a prefilled 1,250 must still step to 1,252.5.
+    const current = Number(value.replace(/,/g, ""))
     const base = Number.isFinite(current) ? current : 0
     const next = Math.max(min, Math.round((base + delta) * 100) / 100)
     onChange(String(next))

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 
 import { BottomBar } from "@/components/BottomBar"
+import { DatePicker } from "@/components/DatePicker"
 import { DayLog } from "@/components/DayLog"
 import { EmptyDay } from "@/components/EmptyDay"
 import { ExercisePicker } from "@/components/ExercisePicker"
@@ -10,7 +11,7 @@ import { SetEntrySheet, summarise } from "@/components/SetEntrySheet"
 import { Toast } from "@/components/Toast"
 import { TopBar } from "@/components/TopBar"
 import { isFuture, shiftDay, todayKey } from "@/lib/date"
-import { dayEntries } from "@/lib/select"
+import { dayEntries, loggedDays } from "@/lib/select"
 import type { Exercise, SetEntry } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
 
@@ -22,9 +23,19 @@ export default function Today() {
     null,
   )
   const [undo, setUndo] = useState<{ set: SetEntry; message: string } | null>(null)
+  const [dateOpen, setDateOpen] = useState(false)
 
   const entries = useMemo(() => dayEntries(state.sets, date), [state.sets, date])
+  const logged = useMemo(() => new Set(loggedDays(state.sets)), [state.sets])
   const openPicker = useCallback(() => setPickerOpen(true), [])
+  const step = useCallback(
+    (days: number) =>
+      setDate((d) => {
+        const next = shiftDay(d, days)
+        return isFuture(next) ? d : next
+      }),
+    [],
+  )
 
   // Desktop shortcuts: n or / to add, arrows to move through days, t for today.
   useEffect(() => {
@@ -34,7 +45,7 @@ export default function Today() {
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
         return
       }
-      if (pickerOpen || entry) return
+      if (pickerOpen || entry || dateOpen) return
 
       switch (e.key) {
         case "n":
@@ -43,19 +54,23 @@ export default function Today() {
           openPicker()
           break
         case "ArrowLeft":
-          setDate((d) => shiftDay(d, -1))
+          step(-1)
           break
         case "ArrowRight":
-          setDate((d) => (isFuture(shiftDay(d, 1)) ? d : shiftDay(d, 1)))
+          step(1)
           break
         case "t":
           setDate(todayKey())
+          break
+        case "d":
+          e.preventDefault()
+          setDateOpen(true)
           break
       }
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [openPicker, pickerOpen, entry])
+  }, [openPicker, pickerOpen, entry, dateOpen, step])
 
   const handleDelete = (set: SetEntry, exercise: Exercise) => {
     deleteSet(set.id)
@@ -91,7 +106,23 @@ export default function Today() {
         )}
       </div>
 
-      <BottomBar date={date} onChangeDate={setDate} onAdd={openPicker} />
+      <BottomBar
+        date={date}
+        onStep={step}
+        onOpenPicker={() => setDateOpen(true)}
+        onAdd={openPicker}
+      />
+
+      <DatePicker
+        open={dateOpen}
+        date={date}
+        loggedDays={logged}
+        onPick={(next) => {
+          setDate(next)
+          setDateOpen(false)
+        }}
+        onClose={() => setDateOpen(false)}
+      />
 
       {undo && (
         <Toast

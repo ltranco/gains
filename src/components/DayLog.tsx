@@ -29,7 +29,12 @@ export function DayLog({
       {entries.map((entry) => (
         <li key={entry.exercise.id} className="border-b px-3 py-3 last:border-b-0">
           <div className="mb-1 flex items-baseline justify-between gap-3 pl-1">
-            <h2 className="min-w-0 truncate text-[14px] font-semibold">
+            {/* Light against the mono 700 values below it — the exercise names the row, the
+                numbers are what you're actually reading. */}
+            <h2
+              className="min-w-0 truncate text-[14px] font-normal tracking-[-0.005em]"
+              style={{ color: "var(--text-muted)" }}
+            >
               {displayName(entry.exercise)}
             </h2>
             <button
