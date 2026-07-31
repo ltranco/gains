@@ -95,6 +95,42 @@
   color-scheme: dark;
 }
 
+
+/*
+ * Accent override. These come *after* the light and dark blocks on purpose: they match those
+ * selectors on specificity, so source order is what decides, and the chosen accent has to be
+ * the last word. One hex per accent for both schemes — each is a mid-tone that carries white
+ * text on either ground.
+ */
+:root[data-accent="indigo"] {
+  --accent: #5E6AD2;
+  --accent-hover: #525FC9;
+}
+:root[data-accent="blue"] {
+  --accent: #3E63DD;
+  --accent-hover: #3556CE;
+}
+:root[data-accent="teal"] {
+  --accent: #0E8175;
+  --accent-hover: #0B6E64;
+}
+:root[data-accent="green"] {
+  --accent: #2F7D4F;
+  --accent-hover: #276B43;
+}
+:root[data-accent="orange"] {
+  --accent: #C2570C;
+  --accent-hover: #A94B0A;
+}
+:root[data-accent="red"] {
+  --accent: #D13438;
+  --accent-hover: #BC2C30;
+}
+:root[data-accent="violet"] {
+  --accent: #8E4EC6;
+  --accent-hover: #7E42B4;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-bg-subtle: var(--bg-subtle);

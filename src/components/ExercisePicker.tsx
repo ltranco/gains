@@ -35,9 +35,6 @@ export function ExercisePicker({
     if (!open) return
     setQuery("")
     setExpanded(new Set())
-    // Focus without the keyboard slamming up before the sheet has finished animating.
-    const t = setTimeout(() => inputRef.current?.focus(), 240)
-    return () => clearTimeout(t)
   }, [open])
 
   const results = useMemo(() => search(query), [query])
@@ -76,6 +73,13 @@ export function ExercisePicker({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search exercises"
             type="search"
+            /*
+             * React's autoFocus focuses during the commit that the tap itself triggered, so
+             * it's still inside the user gesture and iOS raises the keyboard. A focus() from
+             * a timeout is a separate task with no user activation — Safari moves the caret
+             * and leaves the keyboard down, which is what was happening here.
+             */
+            autoFocus
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}

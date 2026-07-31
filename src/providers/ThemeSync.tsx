@@ -6,9 +6,9 @@ import { STORAGE_KEY } from "@/lib/store"
 import { usePrefs } from "./StoreProvider"
 
 /**
- * Runs before first paint, so the page never renders in the wrong theme and then snaps.
- * It reads localStorage directly rather than waiting for React to hydrate — by the time a
- * provider effect fires, the flash has already happened.
+ * Runs before first paint, so the page never renders in the wrong theme or accent and then
+ * snaps. It reads localStorage directly rather than waiting for React to hydrate — by the
+ * time a provider effect fires, the flash has already happened.
  *
  * Stringified deliberately: this has to be a synchronous <script> in <head>.
  */
@@ -16,17 +16,20 @@ export const themeBootstrapScript = `
 (function () {
   try {
     var raw = localStorage.getItem("${STORAGE_KEY}");
-    var theme = raw ? (JSON.parse(raw).prefs || {}).theme : "system";
-    if (theme === "light" || theme === "dark") {
-      document.documentElement.setAttribute("data-theme", theme);
+    var prefs = raw ? (JSON.parse(raw).prefs || {}) : {};
+    if (prefs.theme === "light" || prefs.theme === "dark") {
+      document.documentElement.setAttribute("data-theme", prefs.theme);
+    }
+    if (prefs.accent) {
+      document.documentElement.setAttribute("data-accent", prefs.accent);
     }
   } catch (e) {}
 })();
 `
 
-/** Keeps <html data-theme> in step with the stored preference after hydration. */
+/** Keeps <html data-theme> and <html data-accent> in step with stored preferences. */
 export function ThemeSync() {
-  const { theme } = usePrefs()
+  const { theme, accent } = usePrefs()
 
   useEffect(() => {
     const root = document.documentElement
@@ -36,6 +39,10 @@ export function ThemeSync() {
       root.setAttribute("data-theme", theme)
     }
   }, [theme])
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-accent", accent)
+  }, [accent])
 
   return null
 }

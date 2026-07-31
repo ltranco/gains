@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 
 import { SubPageBar } from "@/components/TopBar"
+import { Check } from "@/components/icons"
+import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT } from "@/lib/accents"
 import { todayKey } from "@/lib/date"
 import { loadRemote, saveRemote } from "@/lib/remote"
 import { EMPTY_REMOTE, parseState, readRemote, writeRemote } from "@/lib/store"
@@ -61,6 +63,38 @@ export default function Settings() {
             ]}
             onChange={(units) => setPrefs({ units })}
           />
+        </Section>
+
+        <Section label="Accent">
+          <div className="flex flex-wrap gap-2">
+            {ACCENT_ORDER.map((key) => {
+              const { label, base } = ACCENTS[key]
+              const active = (hydrated ? state.prefs.accent : DEFAULT_ACCENT) === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={active}
+                  onClick={() => setPrefs({ accent: key })}
+                  className="flex size-8 items-center justify-center rounded-full transition-transform active:scale-95"
+                  style={{
+                    background: base,
+                    // Ring rather than a border, so the swatch itself never changes size.
+                    boxShadow: active
+                      ? `0 0 0 2px var(--bg), 0 0 0 4px ${base}`
+                      : undefined,
+                  }}
+                >
+                  {active && (
+                    <span style={{ color: "#fff" }}>
+                      <Check size={15} />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </Section>
 
         <Section label="Clock">

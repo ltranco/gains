@@ -1,5 +1,5 @@
 import { byId } from "./catalog"
-import type { Exercise, SetEntry } from "./types"
+import type { Exercise, Kind, SetEntry } from "./types"
 
 export interface DayEntry {
   exercise: Exercise
@@ -71,4 +71,69 @@ export function recentExerciseIds(all: SetEntry[], limit = 8): string[] {
 /** Day keys that have at least one set, newest first. */
 export function loggedDays(all: SetEntry[]): string[] {
   return [...new Set(all.map((s) => s.date))].sort((a, b) => b.localeCompare(a))
+}
+
+/**
+ * What counts as "more" for an exercise, as a tuple compared left to right.
+ *
+ * For loaded movements that's weight first, reps as the tiebreak — heaviest is the intuitive
+ * max, and the tiebreak is what makes bodyweight work: pull ups sit at 0kg forever, so reps
+ * decide, and the same rule covers a belt appearing later without a special case.
+ */
+function score(set: SetEntry, kind: Kind): number[] | null {
+  switch (kind) {
+    case "weight_reps":
+      if (set.reps === undefined) return null
+      return [set.weightKg ?? 0, set.reps]
+    case "reps":
+      return set.reps === undefined ? null : [set.reps]
+    case "duration":
+      return set.durationSec === undefined ? null : [set.durationSec]
+    case "distance":
+      return set.distanceM === undefined ? null : [set.distanceM]
+  }
+}
+
+function beats(a: number[], b: number[]): boolean {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0
+    const y = b[i] ?? 0
+    if (x !== y) return x > y
+  }
+  return false
+}
+
+const chronologically = (a: SetEntry, b: SetEntry) =>
+  `${a.date}T${a.loggedAt}`.localeCompare(`${b.date}T${b.loggedAt}`)
+
+/**
+ * Ids of sets that were a personal best *at the moment they were logged* — each is compared
+ * only against what came before it, so old records stay marked and the day view reads as a
+ * history of when you moved the needle rather than a single highlight on your all-time best.
+ *
+ * The first set of an exercise is never marked. It beats nothing, and flagging every debut
+ * would put a badge on half an empty log.
+ */
+export function personalRecordIds(all: SetEntry[]): Set<string> {
+  const byExercise = new Map<string, SetEntry[]>()
+  for (const s of all) {
+    const bucket = byExercise.get(s.exerciseId)
+    if (bucket) bucket.push(s)
+    else byExercise.set(s.exerciseId, [s])
+  }
+
+  const records = new Set<string>()
+  for (const [exerciseId, sets] of byExercise) {
+    const exercise = byId(exerciseId)
+    if (!exercise) continue
+
+    let best: number[] | null = null
+    for (const set of [...sets].sort(chronologically)) {
+      const current = score(set, exercise.kind)
+      if (current === null) continue
+      if (best !== null && beats(current, best)) records.add(set.id)
+      if (best === null || beats(current, best)) best = current
+    }
+  }
+  return records
 }

@@ -11,7 +11,7 @@ import { SetEntrySheet, summarise } from "@/components/SetEntrySheet"
 import { Toast } from "@/components/Toast"
 import { TopBar } from "@/components/TopBar"
 import { isFuture, shiftDay, todayKey } from "@/lib/date"
-import { dayEntries, loggedDays } from "@/lib/select"
+import { dayEntries, loggedDays, personalRecordIds } from "@/lib/select"
 import type { Exercise, SetEntry } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
 
@@ -27,6 +27,7 @@ export default function Today() {
 
   const entries = useMemo(() => dayEntries(state.sets, date), [state.sets, date])
   const logged = useMemo(() => new Set(loggedDays(state.sets)), [state.sets])
+  const records = useMemo(() => personalRecordIds(state.sets), [state.sets])
   const openPicker = useCallback(() => setPickerOpen(true), [])
   const step = useCallback(
     (days: number) =>
@@ -102,6 +103,7 @@ export default function Today() {
             onEdit={(exercise, set) => setEntry({ exercise, editing: set })}
             onDuplicate={(set) => duplicateSet(set.id)}
             onDelete={handleDelete}
+            records={records}
           />
         )}
       </div>

@@ -15,6 +15,7 @@ export function DayLog({
   onEdit,
   onDuplicate,
   onDelete,
+  records,
 }: {
   entries: DayEntry[]
   units: UnitSystem
@@ -23,6 +24,8 @@ export function DayLog({
   onEdit: (ex: Exercise, set: SetEntry) => void
   onDuplicate: (set: SetEntry) => void
   onDelete: (set: SetEntry, ex: Exercise) => void
+  /** Set ids that were a personal best when logged. */
+  records: Set<string>
 }) {
   return (
     <ul className="flex flex-col">
@@ -59,6 +62,7 @@ export function DayLog({
                 onEdit={() => onEdit(entry.exercise, set)}
                 onDuplicate={() => onDuplicate(set)}
                 onDelete={() => onDelete(set, entry.exercise)}
+                isRecord={records.has(set.id)}
               />
             ))}
           </ul>
@@ -81,6 +85,7 @@ function SetRow({
   onEdit,
   onDuplicate,
   onDelete,
+  isRecord,
 }: {
   set: SetEntry
   exercise: Exercise
@@ -89,6 +94,7 @@ function SetRow({
   onEdit: () => void
   onDuplicate: () => void
   onDelete: () => void
+  isRecord: boolean
 }) {
   const time = formatTime(set.loggedAt, clock)
 
@@ -105,7 +111,23 @@ function SetRow({
         >
           {time ?? "--:--"}
         </span>
-        <span className="nums truncate text-[15px]">{summarise(set, exercise, units)}</span>
+        <span
+          className="nums truncate text-[15px]"
+          style={isRecord ? { color: "var(--accent)" } : undefined}
+        >
+          {summarise(set, exercise, units)}
+        </span>
+        {/* A label as well as the colour: colour alone is invisible to anyone who can't
+            distinguish it, and "PR" is the thing you're actually looking for. */}
+        {isRecord && (
+          <span
+            className="shrink-0 text-[10px] font-bold tracking-[0.08em]"
+            style={{ color: "var(--accent)" }}
+            title="Personal record"
+          >
+            PR
+          </span>
+        )}
       </button>
 
       <RowAction label="Duplicate set" onClick={onDuplicate}>

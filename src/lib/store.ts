@@ -12,7 +12,12 @@ import type { GainsState, Prefs, RemoteConfig, SetEntry } from "./types"
 
 export const STORAGE_KEY = "gains.v1"
 
-export const DEFAULT_PREFS: Prefs = { units: "metric", theme: "system", clock: "24h" }
+export const DEFAULT_PREFS: Prefs = {
+  units: "metric",
+  theme: "system",
+  clock: "24h",
+  accent: "indigo",
+}
 
 export const EMPTY_STATE: GainsState = { version: 1, sets: [], prefs: DEFAULT_PREFS }
 

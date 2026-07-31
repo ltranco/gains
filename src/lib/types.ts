@@ -57,11 +57,20 @@ export interface SetEntry {
 export type UnitSystem = "metric" | "imperial"
 export type ThemeChoice = "system" | "light" | "dark"
 export type ClockFormat = "24h" | "12h"
+export type AccentChoice =
+  | "indigo"
+  | "blue"
+  | "teal"
+  | "green"
+  | "orange"
+  | "red"
+  | "violet"
 
 export interface Prefs {
   units: UnitSystem
   theme: ThemeChoice
   clock: ClockFormat
+  accent: AccentChoice
 }
 
 /**
