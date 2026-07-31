@@ -349,7 +349,7 @@ function StorageSection() {
         </Note>
       )}
 
-      <div className="mt-4 flex flex-col gap-1.5">
+      <div className="mt-4 flex flex-col items-start gap-1.5">
         <span className="flex items-center gap-1.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
           Auto push
           {autoBusy && <Spinner size={12} />}
