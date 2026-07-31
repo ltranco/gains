@@ -107,6 +107,14 @@ export const Check = (p: IconProps) => (
   </Svg>
 )
 
+export const Alert = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5v5" />
+    <circle cx="12" cy="16.2" r="0.9" fill="currentColor" stroke="none" />
+  </Svg>
+)
+
 /** Spins via the `.spin` class in globals.css, which respects prefers-reduced-motion. */
 export const Spinner = ({ size = 16, className }: IconProps) => (
   <svg

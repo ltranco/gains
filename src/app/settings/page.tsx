@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { SubPageBar } from "@/components/TopBar"
-import { Check, Close, Spinner } from "@/components/icons"
+import { Alert, Check, Close, Spinner } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { formatStamp, todayKey } from "@/lib/date"
 import { applyPull, planPush, pullSets, pushSets } from "@/lib/remote"
@@ -30,7 +30,7 @@ export default function Settings() {
   const importFile = async (file: File) => {
     const next = parseState(await file.text())
     if (next.sets.length === 0) {
-      setFileStatus("That file has no sets in it — nothing imported.")
+      setFileStatus("That file has no sets in it. Nothing imported.")
       return
     }
     // Replaces rather than merges, for the same reason the remote does. See lib/remote.ts.
@@ -286,26 +286,7 @@ function StorageSection() {
         />
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
-          Auto push
-          {autoBusy && (
-            <span className="ml-1.5 inline-block align-[-2px]">
-              <Spinner size={12} />
-            </span>
-          )}
-        </span>
-        <Segmented<"off" | "on">
-          value={config.autoPush ? "on" : "off"}
-          options={[
-            ["off", "Off"],
-            ["on", "Every minute"],
-          ]}
-          onChange={(v) => setConfig({ ...config, autoPush: v === "on" })}
-        />
-      </div>
-
-      {/* Pull replaces everything logged here, so it asks first. Inline rather than a dialog —
+      {/* Pull replaces everything logged here, so it asks first. Inline rather than a dialog:
           it's one decision, and a sheet for a yes/no is heavier than the question. */}
       {armed ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -338,35 +319,57 @@ function StorageSection() {
         </div>
       )}
 
-      {config.lastSyncedAt && (
-        <p className="nums-quiet mt-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
-          Synced {formatStamp(config.lastSyncedAt)}
-        </p>
+      {/* State of play sits with the buttons that change it. */}
+      {error && (
+        <Note tone="bad">
+          <Alert size={14} />
+          {error}
+        </Note>
       )}
 
-      {error && <Status bad>{error}</Status>}
-
       {!error && pending > 0 && (
-        <Status>
-          {pending} {pending === 1 ? "set" : "sets"} to push.
-        </Status>
+        <Note>
+          {pending} {pending === 1 ? "set" : "sets"} to push
+        </Note>
       )}
 
       {!error && stale > 0 && (
-        <p
-          className="mt-2 text-[13px]"
-          style={{ color: "var(--danger)" }}
-          title="These can't be corrected remotely — the store only ever appends. A Pull would bring them back."
+        <Note
+          tone="bad"
+          title="These can't be corrected remotely. The store only ever appends, so a Pull would bring them back."
         >
+          <Alert size={14} />
           {[
             plan.changed.length > 0 && `${plan.changed.length} edited`,
             plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
           ]
             .filter(Boolean)
-            .join(", ")}{" "}
-          — out of sync.
+            .join(", ")}
+          , out of sync
+        </Note>
+      )}
+
+      <div className="mt-4 flex flex-col gap-1.5">
+        <span className="flex items-center gap-1.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
+          Auto push
+          {autoBusy && <Spinner size={12} />}
+        </span>
+        <Segmented<"off" | "on">
+          value={config.autoPush ? "on" : "off"}
+          options={[
+            ["off", "Off"],
+            ["on", "Every minute"],
+          ]}
+          onChange={(v) => setConfig({ ...config, autoPush: v === "on" })}
+        />
+      </div>
+
+      {config.lastSyncedAt && (
+        <p className="nums-quiet mt-4 text-[12px]" style={{ color: "var(--text-faint)" }}>
+          Synced {formatStamp(config.lastSyncedAt)}
         </p>
       )}
+
     </Section>
   )
 }
@@ -455,6 +458,26 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <h2 className="mb-2.5 text-[14px] font-semibold">{label}</h2>
       {children}
     </section>
+  )
+}
+
+function Note({
+  children,
+  tone,
+  title,
+}: {
+  children: React.ReactNode
+  tone?: "bad"
+  title?: string
+}) {
+  return (
+    <p
+      className="mt-2 flex items-center gap-1.5 text-[13px]"
+      style={{ color: tone === "bad" ? "var(--danger)" : "var(--text-muted)" }}
+      title={title}
+    >
+      {children}
+    </p>
   )
 }
 

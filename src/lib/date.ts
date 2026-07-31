@@ -69,9 +69,9 @@ export function instantOn(dayKey: string): string {
  * you're testing, and a stamp that can't tell them apart says nothing.
  */
 export function formatStamp(iso: string | undefined): string {
-  if (!iso) return "—"
+  if (!iso) return "·"
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
+  if (Number.isNaN(d.getTime())) return "·"
   const p = (n: number) => n.toString().padStart(2, "0")
   return (
     `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +

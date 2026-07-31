@@ -30,7 +30,7 @@ function trim(n: number, places: number): string {
 
 /** Whole counts — reps — with the same grouping, so 1,000 never renders as 1000. */
 export function formatCount(n: number | undefined): string {
-  if (n === undefined) return "—"
+  if (n === undefined) return "·"
   return trim(n, 0)
 }
 
@@ -53,7 +53,7 @@ export function weightValue(kg: number, u: UnitSystem): string {
  * is wrong at the point it matters most: the derived metrics.
  */
 export function formatLoad(kg: number | undefined, u: UnitSystem): string {
-  if (kg === undefined) return "—"
+  if (kg === undefined) return "·"
   return `${weightValue(kg, u)} ${weightUnit(u)}`
 }
 
@@ -73,7 +73,7 @@ export function distanceValue(m: number, u: UnitSystem): string {
 }
 
 export function formatDistance(m: number | undefined, u: UnitSystem): string {
-  if (m === undefined) return "—"
+  if (m === undefined) return "·"
   return `${distanceValue(m, u)} ${distanceUnit(u)}`
 }
 
@@ -85,7 +85,7 @@ export function parseDistance(input: string, u: UnitSystem): number | undefined 
 
 /** Seconds → `1:30`, or `1:02:30` once it passes an hour. */
 export function formatDuration(sec: number | undefined): string {
-  if (sec === undefined) return "—"
+  if (sec === undefined) return "·"
   const s = Math.max(0, Math.round(sec))
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)

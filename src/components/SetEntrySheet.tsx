@@ -276,7 +276,7 @@ export function summarise(set: SetEntry, ex: Exercise, units: UnitSystem): strin
     case "duration":
       return formatDuration(set.durationSec)
     case "distance": {
-      const d = set.distanceM === undefined ? "—" : `${distanceValue(set.distanceM, units)} ${distanceUnit(units)}`
+      const d = set.distanceM === undefined ? "·" : `${distanceValue(set.distanceM, units)} ${distanceUnit(units)}`
       return set.durationSec ? `${d} · ${formatDuration(set.durationSec)}` : d
     }
   }
