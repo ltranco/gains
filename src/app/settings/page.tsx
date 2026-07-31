@@ -36,7 +36,7 @@ export default function Settings() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[560px] flex-col border-x">
+    <main className="mx-auto flex min-h-dvh max-w-[560px] flex-col">
       <SubPageBar title="Settings" />
 
       <div className="flex flex-col">
@@ -228,7 +228,7 @@ function Field({
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <section className="border-b px-4 py-4">
+    <section className="border-b px-4 py-4 last:border-b-0">
       <h2 className="mb-2.5 text-[14px] font-semibold">{label}</h2>
       {children}
     </section>

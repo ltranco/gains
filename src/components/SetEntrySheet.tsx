@@ -63,8 +63,6 @@ export function SetEntrySheet({
   const units = state.prefs.units
 
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
-  /** Sets added during this opening, so you can see the ladder you just logged. */
-  const [added, setAdded] = useState<SetEntry[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const previous = useMemo(
@@ -78,7 +76,6 @@ export function SetEntrySheet({
   useEffect(() => {
     if (!open || !exercise) return
     setDraft(draftFrom(editing ?? previous, units, exercise))
-    setAdded([])
     setError(null)
   }, [open, exercise, editing, previous, units])
 
@@ -98,24 +95,12 @@ export function SetEntrySheet({
 
     if (editing) {
       updateSet(editing.id, built.value)
-      onClose()
-      return
+    } else {
+      addSet({ exerciseId: exercise.id, date, ...built.value })
     }
-
-    // Stay open and keep the values. Four sets of the same weight is the common case, and
-    // reopening the sheet three more times to retype them is the thing that makes logging
-    // feel like admin.
-    addSet({ exerciseId: exercise.id, date, ...built.value })
-    setAdded((prev) => [
-      ...prev,
-      {
-        id: `local-${prev.length}`,
-        exerciseId: exercise.id,
-        date,
-        loggedAt: new Date().toISOString(),
-        ...built.value,
-      },
-    ])
+    // Always back to the day view, so the set you just logged is the thing you see. Repeating
+    // a set is the `+` on that exercise's block, which reopens here prefilled from it.
+    onClose()
   }
 
   const weightStep = units === "metric" ? 2.5 : 5
@@ -238,25 +223,6 @@ export function SetEntrySheet({
           <p className="text-[13px]" style={{ color: "var(--danger)" }}>
             {error}
           </p>
-        )}
-
-        {added.length > 0 && (
-          <div className="mt-1 border-t pt-3">
-            <h3
-              className="mb-1.5 text-[11px] font-semibold tracking-[0.06em] uppercase"
-              style={{ color: "var(--text-faint)" }}
-            >
-              Added
-            </h3>
-            <ul className="flex flex-col gap-1">
-              {added.map((s, i) => (
-                <li key={s.id} className="nums flex gap-3 text-[13px]">
-                  <span style={{ color: "var(--text-faint)" }}>{i + 1}</span>
-                  <span>{summarise(s, exercise, units)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
 
         {/* Lets Return submit on iOS without a visible duplicate button. */}

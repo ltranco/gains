@@ -58,7 +58,7 @@ export function ExercisePicker({
     })
 
   return (
-    <Sheet open={open} onClose={onClose} title="Add exercise">
+    <Sheet open={open} onClose={onClose} title="Add exercise" fullHeight>
       <div
         className="sticky top-0 z-10 border-b px-3 py-2.5"
         style={{ background: "var(--bg-elevated)" }}
@@ -89,9 +89,14 @@ export function ExercisePicker({
       <div className="pb-2">
         {query ? (
           results.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[13px]" style={{ color: "var(--text-faint)" }}>
-              Nothing matches “{query}”.
-            </p>
+            <div className="flex flex-col items-center px-6 py-12">
+              <span style={{ color: "var(--text-faint)" }}>
+                <Search size={22} />
+              </span>
+              <p className="mt-3 text-[13px]" style={{ color: "var(--text-faint)" }}>
+                No match for “{query}”
+              </p>
+            </div>
           ) : (
             <ul>
               {results.map((ex) => (

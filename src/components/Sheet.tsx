@@ -18,12 +18,19 @@ export function Sheet({
   title,
   children,
   footer,
+  fullHeight = false,
 }: {
   open: boolean
   onClose: () => void
   title: string
   children: React.ReactNode
   footer?: React.ReactNode
+  /**
+   * Pin the panel to a fixed tall height instead of letting content size it. Without this a
+   * sheet whose list empties out collapses to the height of its header and slides down behind
+   * the iOS keyboard, taking the search field with it.
+   */
+  fullHeight?: boolean
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -69,11 +76,15 @@ export function Sheet({
 
       <div
         ref={panelRef}
-        className="sheet-panel relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl sm:max-w-[440px] sm:rounded-2xl"
+        className="sheet-panel relative flex w-full flex-col overflow-hidden rounded-t-2xl sm:max-w-[440px] sm:rounded-2xl"
         style={{
           background: "var(--bg-elevated)",
           boxShadow: "var(--shadow-sheet)",
           paddingBottom: "env(safe-area-inset-bottom)",
+          // dvh, not vh: iOS shrinks the dynamic viewport when the keyboard comes up, so the
+          // panel tracks the space actually left rather than sliding under it.
+          maxHeight: "92dvh",
+          ...(fullHeight ? { height: "92dvh" } : {}),
         }}
       >
         <header className="flex shrink-0 items-center justify-between border-b px-4 py-3">

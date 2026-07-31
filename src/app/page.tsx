@@ -78,7 +78,7 @@ export default function Today() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[560px] flex-col border-x">
+    <main className="mx-auto flex min-h-dvh max-w-[560px] flex-col">
       <TopBar />
 
       <div className="flex-1">
