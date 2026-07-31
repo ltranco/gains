@@ -162,3 +162,48 @@ export function TextField({
     </div>
   )
 }
+
+/**
+ * A real `<input type="time">`, not a text box.
+ *
+ * The platform picker is better than anything worth hand-rolling here: iOS gives its wheel,
+ * desktop gives a spinner, and both understand the locale. The value it hands back is always
+ * `HH:mm` in 24-hour form regardless of how it chooses to display it, so nothing downstream
+ * has to parse a locale.
+ */
+export function TimeField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: string
+  onChange: (next: string) => void
+}) {
+  const id = useId()
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <label htmlFor={id} className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+          {label}
+        </label>
+        {hint && (
+          <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
+            {hint}
+          </span>
+        )}
+      </div>
+      <input
+        id={id}
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        step={60}
+        className="nums w-full rounded-lg border py-2.5 text-center text-[17px] font-medium outline-none focus:border-[var(--accent)]"
+        style={{ background: "var(--bg-subtle)", colorScheme: "inherit" }}
+      />
+    </div>
+  )
+}

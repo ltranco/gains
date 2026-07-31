@@ -20,7 +20,7 @@ import {
 } from "@/lib/units"
 import { useStore } from "@/providers/StoreProvider"
 import { Sheet } from "./Sheet"
-import { NumberField, TextField } from "./NumberField"
+import { NumberField, TextField, TimeField } from "./NumberField"
 
 interface Draft {
   weight: string
@@ -221,12 +221,10 @@ export function SetEntrySheet({
 
         {/* Last, and deliberately quiet: you are correcting a record, not logging one. */}
         {editing && (
-          <TextField
+          <TimeField
             label="Time"
-            hint="24-hour"
             value={draft.time}
             onChange={(time) => setDraft((d) => ({ ...d, time }))}
-            placeholder="14:32"
           />
         )}
 
@@ -254,7 +252,7 @@ export function SetEntrySheet({
  * The calendar day never moves: that is what the date stepper is for.
  */
 function movedTo(set: SetEntry, time: string): string | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim())
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(time.trim())
   if (!m) return null
   const h = Number(m[1])
   const min = Number(m[2])
