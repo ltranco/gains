@@ -88,60 +88,81 @@ Node 20.
    each other down a column, so they get tabular figures and a flatter, heavier face than
    Inter's.
 
-## Metrics push
+## Storage — bring your own
 
-Settings takes an endpoint and a token. gains derives **per-exercise daily scalars** and posts
-them in the metrics shim's ingest format (see `~/dev/metrics`):
+gains is a **client**. It logs, it draws, it pushes; the data lives wherever you point it.
+Local state is a cache, not the truth. Any backend honouring the contract works —
+`metrics.ltran.co` is one instance. The contract is written down in `CONTRACT.md`.
+
+Two capabilities, the second optional to the backend:
 
 ```
-POST <url>   Authorization: Bearer <token>
-{ "barbell_squat_volume": { "2026-07-31T00:00:00.000-07:00": 1000 },
-  "barbell_squat_sets":   { "2026-07-31T00:00:00.000-07:00": 2 } }
+push  POST <url>       Authorization: Bearer <token>
+      { "barbell_squat_volume": { "2026-07-31T09:14:03.000-07:00": 500 }, ... }
+
+pull  GET  <readUrl>?match[]=...   Authorization: Bearer <token>
+      -> VictoriaMetrics export JSON Lines
 ```
 
-The host is configuration — anything honouring that contract works; `metrics.ltran.co/ingest`
-is only the default placeholder. It goes through `/api/remote` so the endpoint needn't serve
-CORS headers.
+**One sample per set per measure, stamped at the set's own `loggedAt`** — facts, not summaries.
+A storage layer can only return what it was sent, and a daily total can't tell you it was
+2×100kg×5 rather than 1×200kg×5. This replaced an earlier daily-rollup design that could never
+be restored from.
 
-Measures, by exercise kind — `volume` (Σ kg × reps), `sets`, `reps`, `seconds`, `metres`.
-Metric prefix is `slug(displayName(exercise))`, verified collision-free across all 173 entries.
-**The shim prepends its measurement name**, so what lands in VictoriaMetrics is
-`health_barbell_squat_volume`.
+Measures by kind: `weight_reps` → `weight`, `reps`, `volume`; `reps` → `reps`;
+`duration` → `seconds`; `distance` → `metres` (+ `seconds` when a time was logged).
 
-**This is a one-way derived feed, not a backup.** Daily totals cannot be turned back into sets.
-JSON export is the only route to recovering the log.
+**No `_sets` metric.** `count_over_time(x_volume[1d])` already is the set count, and a stored
+copy could only disagree with it.
+
+Metric prefix is `slug(displayName(exercise))` — verified collision-free across all 173 catalog
+entries, and there's a test that fails if that ever stops being true. **The shim prepends its
+measurement name**, so VictoriaMetrics holds `health_barbell_squat_volume`.
+
+Because samples are per-set, the natural Grafana queries are simply correct:
+
+| | |
+| --- | --- |
+| `sum_over_time(health_barbell_squat_volume[1d])` | daily volume |
+| `max_over_time(health_barbell_squat_weight[1d])` | top set, the strength line |
+| `count_over_time(health_barbell_squat_volume[1d])` | sets |
+| `sum(sum_over_time({__name__=~"health_.+_volume"}[1d]))` | volume across all exercises |
 
 Config lives under **its own** localStorage key, not inside `GainsState` — that document gets
 exported, and a bearer token has no business travelling inside it.
 
-### Why timestamps carry a millisecond offset
+### Storage traps
 
-All of this was verified against real VictoriaMetrics with the production flags and the real
-shim built from `~/dev/metrics/shim`. Don't take it on faith; don't undo it either.
+Verified against real VictoriaMetrics on the production flags, the real shim from
+`~/dev/metrics/shim`, and the real nginx config. Don't take these on faith; don't undo them.
 
-1. **A re-post at the same timestamp cannot correct a value downward.**
-   `-dedup.minScrapeInterval=1ms` keeps the **biggest** value on a tie. Posting 5400 → 4000 →
-   9999 leaves exactly one sample: 9999. Delete a set, re-post the smaller total, and the old
-   larger number is what the dashboard shows forever — `admin/tsdb/delete_series` isn't
-   reachable through nginx, so it needs SSH.
+1. **The store only appends. Edits and deletes do not propagate.** Dedup keeps the *biggest*
+   value on a timestamp tie, so re-sending a corrected set can raise a number but never lower
+   it, and `delete_series` isn't reachable through nginx. `planPush` therefore refuses to
+   re-send a changed set — a half-applied edit, weight rising while reps fall, is worse than a
+   stale one — and Settings reports the count instead.
 
-2. **So each revision of a day lands one millisecond later**, and `last_over_time` returns the
-   newest. `rollupTimestamp(day, rev)` does this; `rev` is tracked per day in the remote config.
+2. **Set timestamps must be unique per exercise.** Two samples of one metric in the same
+   millisecond collapse, and the survivor is whichever value is larger. `samplesFor` nudges
+   collisions forward a millisecond each. Different exercises at the same instant are left
+   alone.
 
-3. **The timestamp must be RFC3339, never epoch millis.** The shim's `toNanos` does
-   `int64(float64 * 1e9)`, and at 1.78e18 the mantissa can't hold nanoseconds: key
-   `…200001` becomes `…000999936ns`, drops into the *previous* millisecond bucket, and dedup
-   discards it as a tie. This silently ate a correction mid-test. `time.ParseInLocation` on an
-   RFC3339 string is exact integer arithmetic.
+3. **Timestamps must be RFC3339, never epoch millis.** The shim's `toNanos` does
+   `int64(float64 * 1e9)`, and at 1.78e18 the mantissa can't hold nanoseconds: a `+1ms` key
+   lands at `…000999936ns`, drops into the previous millisecond, and dedup eats it. This
+   silently discarded a correction mid-test before RFC3339 fixed it.
 
-4. **Never query these with `sum_over_time`.** Multiple samples per day means it counts every
-   revision — a corrected day summed to 6600 when the true value was 1200. Use
-   `last_over_time(metric[1h])`, and `sum(last_over_time({__name__=~"health_.*_volume"}[1h]))`
-   to aggregate across exercises. Note that the existing steps-to-goal stat in the metrics repo
-   *does* use `sum_over_time`; gains metrics must not inherit that pattern.
+4. **A push is not immediately readable.** VictoriaMetrics needs roughly 10–15s to index new
+   samples, and back-dated ones take longer. A pull straight after a push will look like data
+   went missing. Never treat that as loss.
 
-5. **Push only days whose fingerprint changed.** Otherwise every push appends a sample to every
-   day ever logged, bloating the series and compounding trap 4.
+5. **`note` and `id` do not survive a round trip.** VictoriaMetrics stores numbers only, so
+   any textual field is lost and ids are regenerated on pull. This caps what the schema can
+   ever hold.
+
+6. **Pull replaces local state wholesale.** There is no merge, because merging needs a rule for
+   "both sides changed the same set" and inventing one silently is how a log stops matching
+   what happened.
 
 ## Traps
 

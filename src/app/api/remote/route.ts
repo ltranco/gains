@@ -1,40 +1,39 @@
 import type { NextRequest } from "next/server"
 
 /**
- * Proxy to the user-configured metrics endpoint. The browser talks to this route; this route
- * talks to whatever URL is set in Settings, forwarding the shim's ingest contract verbatim:
+ * Proxy to the user-configured storage layer. The browser talks to this route; this route
+ * talks to whatever URL is set in Settings, forwarding one bearer token either way:
  *
- *   POST <url>   Authorization: Bearer <token>
- *   { "<metric>": { "<timestamp>": <number> } }
+ *   push — POST <url>            body = { "<metric>": { "<timestamp>": <number> } }
+ *   pull — GET  <url>?match[]=…   returns VictoriaMetrics export JSON Lines
  *
  * The point is not secrecy — the token lives in localStorage and anyone holding the device can
  * read it. It's that an arbitrary endpoint of your own shouldn't have to serve CORS headers to
- * be usable here. Going through our origin removes preflight from the picture, so a plain
- * nginx location block or a small Go handler works as-is.
+ * be usable here. Going through our own origin removes preflight from the picture, so a plain
+ * nginx location block works as-is.
  */
 
 interface Body {
   url?: unknown
   token?: unknown
   payload?: unknown
+  read?: unknown
 }
 
-function target(body: Body): { url: string; token: string } | { error: string } {
-  const raw = typeof body.url === "string" ? body.url.trim() : ""
-  const token = typeof body.token === "string" ? body.token : ""
-  if (!raw) return { error: "No endpoint configured." }
-
-  let parsed: URL
+function target(raw: unknown): { url: URL } | { error: string } {
+  const value = typeof raw === "string" ? raw.trim() : ""
+  if (!value) return { error: "No endpoint configured." }
+  let url: URL
   try {
-    parsed = new URL(raw)
+    url = new URL(value)
   } catch {
     return { error: "That doesn't parse as a URL." }
   }
   // Refuse to be a general-purpose fetcher.
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
     return { error: "Endpoint must be http or https." }
   }
-  return { url: parsed.toString(), token }
+  return { url }
 }
 
 export async function POST(req: NextRequest) {
@@ -45,25 +44,47 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Bad request body." }, { status: 400 })
   }
 
-  const to = target(body)
+  const to = target(body.url)
   if ("error" in to) return Response.json({ error: to.error }, { status: 400 })
 
-  if (typeof body.payload !== "object" || body.payload === null) {
-    return Response.json({ error: "Nothing to push." }, { status: 400 })
+  const token = typeof body.token === "string" ? body.token : ""
+  const auth: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {}
+  const reading = typeof body.read === "object" && body.read !== null
+
+  if (!reading && (typeof body.payload !== "object" || body.payload === null)) {
+    return Response.json({ error: "Nothing to send." }, { status: 400 })
   }
 
   try {
+    if (reading) {
+      const url = to.url
+      for (const [k, v] of Object.entries(body.read as Record<string, unknown>)) {
+        if (typeof v === "string") url.searchParams.append(k, v)
+      }
+      const upstream = await fetch(url, {
+        headers: auth,
+        cache: "no-store",
+        signal: AbortSignal.timeout(60_000),
+      })
+      const text = await upstream.text()
+      if (!upstream.ok) {
+        return Response.json(
+          { error: `Endpoint replied ${upstream.status}. ${text.slice(0, 200)}`.trim() },
+          { status: 502 },
+        )
+      }
+      // Returned as an opaque string: export is JSON Lines, not a JSON document, so it
+      // can't be re-serialised without losing the line framing.
+      return Response.json({ ok: true, body: text })
+    }
+
     const upstream = await fetch(to.url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(to.token ? { authorization: `Bearer ${to.token}` } : {}),
-      },
+      headers: { "content-type": "application/json", ...auth },
       body: JSON.stringify(body.payload),
       cache: "no-store",
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(30_000),
     })
-
     const text = await upstream.text()
     if (!upstream.ok) {
       return Response.json(
@@ -71,9 +92,7 @@ export async function POST(req: NextRequest) {
         { status: 502 },
       )
     }
-
-    // The shim answers {"written":N}. Pass it through when present — it's the only
-    // confirmation that samples actually landed rather than being silently skipped.
+    // The shim answers {"written":N} — the only confirmation samples actually landed.
     try {
       const parsed = JSON.parse(text) as { written?: number }
       return Response.json({ ok: true, written: parsed.written })

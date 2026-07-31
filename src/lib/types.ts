@@ -80,15 +80,19 @@ export interface Prefs {
  * its own storage key.
  */
 export interface RemoteConfig {
+  /** Where samples are POSTed. The shim's ingest contract. */
   url: string
+  /** Optional. VictoriaMetrics' export endpoint, for reading the log back. */
+  readUrl?: string
+  /** One bearer token, used for both directions. */
   token: string
   lastSyncedAt?: string
   /**
-   * Per-day push bookkeeping. `hash` is the fingerprint of what was last sent, so unchanged
-   * days are skipped; `rev` is the millisecond offset the next revision of that day uses, so
-   * a correction lands after its predecessor rather than tying with it and losing to dedup.
+   * Set id -> fingerprint of what was last sent. Lets a push skip sets already stored, and
+   * lets the UI tell you which sets have since been edited or deleted locally — neither of
+   * which can propagate to an append-only store.
    */
-  pushed?: Record<string, { hash: string; rev: number }>
+  pushed?: Record<string, string>
 }
 
 export interface GainsState {

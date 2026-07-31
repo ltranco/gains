@@ -6,7 +6,7 @@ import { SubPageBar } from "@/components/TopBar"
 import { Check } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { todayKey } from "@/lib/date"
-import { buildPush, pushMetrics, resetPushState } from "@/lib/remote"
+import { applyPull, planPush, pullSets, pushSets, resetPushState } from "@/lib/remote"
 import { EMPTY_REMOTE, parseState, readRemote, writeRemote } from "@/lib/store"
 import type { ClockFormat, RemoteConfig, ThemeChoice, UnitSystem } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
@@ -78,7 +78,7 @@ export default function Settings() {
           />
         </Section>
 
-        <MetricsSection />
+        <StorageSection />
 
         <Section label="File">
           <div className="flex gap-2">
@@ -217,19 +217,20 @@ function Swatch({
 }
 
 /**
- * The metrics endpoint. Not auth, and not a backup — this is a one-way derived feed. Daily
- * totals cannot be turned back into sets, so the JSON export below remains the only way to
- * recover the log itself.
+ * The storage layer. gains is a client — it logs, draws and pushes; the data lives wherever
+ * you point it. Anything honouring the contract works; metrics.ltran.co is just one instance.
  *
- * Any host honouring the shim's ingest contract works; metrics.ltran.co is just the default.
+ * The remote is append-only, so this UI has to be honest about what can't propagate: a set
+ * you edited or deleted after pushing stays as it was remotely. We deliberately don't re-send
+ * changed sets — a partial application, weight rising while reps fall, would be worse than a
+ * stale one.
  */
-function MetricsSection() {
-  const { state } = useStore()
+function StorageSection() {
+  const { state, replaceAll } = useStore()
   const [config, setConfig] = useState<RemoteConfig>(EMPTY_REMOTE)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<"push" | "pull" | null>(null)
   const [status, setStatus] = useState<{ text: string; bad?: boolean } | null>(null)
 
-  // Kept out of GainsState, so it loads separately from the log document.
   useEffect(() => setConfig(readRemote()), [])
 
   const save = (next: RemoteConfig) => {
@@ -237,57 +238,76 @@ function MetricsSection() {
     writeRemote(next)
   }
 
-  const pending = useMemo(
-    () => buildPush(config, state.sets).outcome,
-    [config, state.sets],
-  )
+  const plan = useMemo(() => planPush(config, state.sets), [config, state.sets])
 
-  const push = async () => {
-    setBusy(true)
+  const doPush = async () => {
+    setBusy("push")
     setStatus(null)
-    const res = await pushMetrics(config, state.sets)
-    setBusy(false)
-    if (!res.ok) {
-      setStatus({ text: res.error, bad: true })
-      return
-    }
+    const res = await pushSets(config, state.sets)
+    setBusy(null)
+    if (!res.ok) return setStatus({ text: res.error, bad: true })
     save(res.value.config)
     setStatus({
       text:
-        res.value.days.length === 0
-          ? "Already up to date."
-          : `Pushed ${res.value.samples} samples across ${res.value.days.length} ${
-              res.value.days.length === 1 ? "day" : "days"
-            }.`,
+        res.value.fresh.length === 0
+          ? "Nothing new to push."
+          : `Pushed ${res.value.fresh.length} ${res.value.fresh.length === 1 ? "set" : "sets"} (${res.value.written} samples).`,
     })
   }
 
-  const ready = config.url.trim().length > 0
+  const doPull = async () => {
+    setBusy("pull")
+    setStatus(null)
+    const res = await pullSets(config)
+    setBusy(null)
+    if (!res.ok) return setStatus({ text: res.error, bad: true })
+    replaceAll(applyPull(state, res.value.sets))
+    save(res.value.config)
+    const unknown = res.value.unknownPrefixes.length
+    setStatus({
+      text:
+        `Pulled ${res.value.sets.length} sets, replacing local.` +
+        (unknown ? ` ${unknown} unrecognised exercise${unknown === 1 ? "" : "s"} skipped.` : ""),
+    })
+  }
+
+  const canPush = config.url.trim().length > 0
+  const canPull = (config.readUrl ?? "").trim().length > 0
 
   return (
-    <Section label="Metrics">
+    <Section label="Storage">
       <div className="flex flex-col gap-2">
         <Field
-          label="Endpoint"
+          label="Push to"
           value={config.url}
           onChange={(url) => save({ ...config, url })}
           placeholder="https://metrics.ltran.co/ingest"
           type="url"
         />
         <Field
+          label="Read from"
+          value={config.readUrl ?? ""}
+          onChange={(readUrl) => save({ ...config, readUrl })}
+          placeholder="https://metrics.ltran.co/api/v1/export"
+          type="url"
+        />
+        <Field
           label="Token"
           value={config.token}
           onChange={(token) => save({ ...config, token })}
-          placeholder="Bearer token"
+          placeholder="Bearer token, used both ways"
           type="password"
         />
       </div>
 
       <div className="mt-2.5 flex flex-wrap gap-2">
-        <Button onClick={push} disabled={!ready || busy}>
-          {busy ? "Pushing…" : "Push"}
+        <Button onClick={doPush} disabled={!canPush || busy !== null}>
+          {busy === "push" ? "Pushing…" : "Push"}
         </Button>
-        <Button onClick={() => save(resetPushState(config))} disabled={busy}>
+        <Button onClick={doPull} disabled={!canPull || busy !== null}>
+          {busy === "pull" ? "Pulling…" : "Pull"}
+        </Button>
+        <Button onClick={() => save(resetPushState(config))} disabled={busy !== null}>
           Re-send all
         </Button>
       </div>
@@ -296,14 +316,23 @@ function MetricsSection() {
         <Status bad={status.bad}>{status.text}</Status>
       ) : (
         <Status>
-          {pending.days.length === 0
-            ? "Nothing to push."
-            : `${pending.samples} samples across ${pending.days.length} ${
-                pending.days.length === 1 ? "day" : "days"
-              } pending.`}
-          {config.lastSyncedAt &&
-            ` Last pushed ${new Date(config.lastSyncedAt).toLocaleString()}.`}
+          {plan.fresh.length === 0
+            ? "Everything logged has been pushed."
+            : `${plan.fresh.length} ${plan.fresh.length === 1 ? "set" : "sets"} pending (${plan.sampleCount} samples).`}
+          {config.lastSyncedAt && ` Last synced ${new Date(config.lastSyncedAt).toLocaleString()}.`}
         </Status>
+      )}
+
+      {(plan.changed.length > 0 || plan.deletedIds.length > 0) && (
+        <p className="mt-2 text-[13px]" style={{ color: "var(--danger)" }}>
+          {[
+            plan.changed.length > 0 && `${plan.changed.length} edited`,
+            plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
+          ]
+            .filter(Boolean)
+            .join(", ")}{" "}
+          after pushing. The store only appends, so those stay as first sent.
+        </p>
       )}
     </Section>
   )

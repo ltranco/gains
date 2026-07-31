@@ -68,21 +68,6 @@ export function rfc3339Local(d: Date): string {
 }
 
 /**
- * Timestamp for a day's rollup: local midnight plus `revision` milliseconds.
- *
- * The offset is what makes a correction possible at all. VictoriaMetrics runs with
- * `-dedup.minScrapeInterval=1ms` and keeps the *biggest* value on a timestamp tie, so
- * re-posting a day's number after deleting a set leaves the old larger value in place
- * forever — and the admin delete-series API isn't reachable through nginx. Each revision
- * therefore lands one millisecond later, and `last_over_time` returns the newest.
- */
-export function rollupTimestamp(dayKey: string, revision: number): string {
-  const d = fromDayKey(dayKey)
-  d.setMilliseconds(revision)
-  return rfc3339Local(d)
-}
-
-/**
  * `loggedAt` → `14:32` or `2:32 pm`. Built by hand rather than via `toLocaleTimeString`,
  * which decides 12- vs 24-hour from the browser locale and so ignores the preference.
  * Returns null for sets with no usable timestamp — imported data may predate this field.
