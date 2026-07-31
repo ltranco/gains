@@ -70,7 +70,8 @@ export interface Prefs {
   units: UnitSystem
   theme: ThemeChoice
   clock: ClockFormat
-  accent: AccentChoice
+  /** A preset key from `lib/accents.ts`, or any `#rrggbb`. */
+  accent: string
 }
 
 /**

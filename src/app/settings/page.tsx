@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { SubPageBar } from "@/components/TopBar"
 import { Check } from "@/components/icons"
-import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT } from "@/lib/accents"
+import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { todayKey } from "@/lib/date"
 import { loadRemote, saveRemote } from "@/lib/remote"
 import { EMPTY_REMOTE, parseState, readRemote, writeRemote } from "@/lib/store"
@@ -65,37 +65,7 @@ export default function Settings() {
           />
         </Section>
 
-        <Section label="Accent">
-          <div className="flex flex-wrap gap-2">
-            {ACCENT_ORDER.map((key) => {
-              const { label, base } = ACCENTS[key]
-              const active = (hydrated ? state.prefs.accent : DEFAULT_ACCENT) === key
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-label={label}
-                  aria-pressed={active}
-                  onClick={() => setPrefs({ accent: key })}
-                  className="flex size-8 items-center justify-center rounded-full transition-transform active:scale-95"
-                  style={{
-                    background: base,
-                    // Ring rather than a border, so the swatch itself never changes size.
-                    boxShadow: active
-                      ? `0 0 0 2px var(--bg), 0 0 0 4px ${base}`
-                      : undefined,
-                  }}
-                >
-                  {active && (
-                    <span style={{ color: "#fff" }}>
-                      <Check size={15} />
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </Section>
+        <AccentSection />
 
         <Section label="Clock">
           <Segmented<ClockFormat>
@@ -130,6 +100,119 @@ export default function Settings() {
         </Section>
       </div>
     </main>
+  )
+}
+
+/**
+ * Seven presets plus anything you can name in hex. The custom swatch opens the platform
+ * colour picker; the field beside it takes a pasted hex with or without the `#`, so a value
+ * copied out of Figma drops straight in.
+ */
+function AccentSection() {
+  const { state, hydrated, setPrefs } = useStore()
+  const accent = hydrated ? state.prefs.accent : DEFAULT_ACCENT
+  const custom = accent.startsWith("#")
+
+  // Local text state so a half-typed hex doesn't repaint the app on every keystroke.
+  const [draft, setDraft] = useState("")
+  useEffect(() => setDraft(custom ? accent : ""), [accent, custom])
+
+  const commit = (value: string) => {
+    const hex = normaliseHex(value)
+    if (hex) setPrefs({ accent: hex })
+  }
+
+  return (
+    <Section label="Accent">
+      <div className="flex flex-wrap items-center gap-2">
+        {ACCENT_ORDER.map((key) => (
+          <Swatch
+            key={key}
+            color={ACCENTS[key].base}
+            label={ACCENTS[key].label}
+            active={accent === key}
+            onClick={() => setPrefs({ accent: key })}
+          />
+        ))}
+
+        <label
+          className="relative flex size-8 cursor-pointer items-center justify-center rounded-full transition-transform active:scale-95"
+          title="Custom colour"
+          style={{
+            background: custom
+              ? accent
+              : "conic-gradient(#d13438,#c2570c,#2f7d4f,#0e8175,#3e63dd,#8e4ec6,#d13438)",
+            boxShadow: custom
+              ? `0 0 0 2px var(--bg), 0 0 0 4px ${accent}`
+              : undefined,
+          }}
+        >
+          {custom && (
+            <span style={{ color: "var(--accent-text)" }}>
+              <Check size={15} />
+            </span>
+          )}
+          <input
+            type="color"
+            value={custom ? accent : "#5e6ad2"}
+            onChange={(e) => setPrefs({ accent: e.target.value.toLowerCase() })}
+            aria-label="Custom accent colour"
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+          />
+        </label>
+      </div>
+
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            commit(draft)
+          }
+        }}
+        placeholder="#5e6ad2"
+        spellCheck={false}
+        autoCapitalize="none"
+        autoCorrect="off"
+        className="nums-quiet mt-2.5 w-32 rounded-lg border px-2.5 py-1.5 text-[13px] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+        style={{ background: "var(--bg-subtle)" }}
+      />
+    </Section>
+  )
+}
+
+function Swatch({
+  color,
+  label,
+  active,
+  onClick,
+}: {
+  color: string
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      onClick={onClick}
+      className="flex size-8 items-center justify-center rounded-full transition-transform active:scale-95"
+      style={{
+        background: color,
+        // A ring rather than a border, so the swatch never changes size when selected.
+        boxShadow: active ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : undefined,
+      }}
+    >
+      {active && (
+        <span style={{ color: "#fff" }}>
+          <Check size={15} />
+        </span>
+      )}
+    </button>
   )
 }
 

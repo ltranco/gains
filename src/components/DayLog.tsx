@@ -118,11 +118,15 @@ function SetRow({
           {summarise(set, exercise, units)}
         </span>
         {/* A label as well as the colour: colour alone is invisible to anyone who can't
-            distinguish it, and "PR" is the thing you're actually looking for. */}
+            distinguish it, and "PR" is the thing you're actually looking for. The tint is
+            derived from the accent so it follows a custom colour without a second variable. */}
         {isRecord && (
           <span
-            className="shrink-0 text-[10px] font-bold tracking-[0.08em]"
-            style={{ color: "var(--accent)" }}
+            className="shrink-0 rounded px-1.5 py-[3px] text-[9px] leading-none font-bold tracking-[0.09em]"
+            style={{
+              color: "var(--accent)",
+              background: "color-mix(in srgb, var(--accent) 13%, transparent)",
+            }}
             title="Personal record"
           >
             PR
