@@ -57,11 +57,25 @@ export function formatLoad(kg: number | undefined, u: UnitSystem): string {
   return `${weightValue(kg, u)} ${weightUnit(u)}`
 }
 
-/** Display number → canonical kg. Returns undefined for unparseable input. */
+/**
+ * Smallest increment worth storing, in kilograms.
+ *
+ * Nobody loads 108.82829282 of anything. Converting 235 lb gives 106.5941831..., and storing
+ * that verbatim means the metric view reads back a number no plate can make, and the volume
+ * derived from it is worse. Snapping to 0.05kg is finer than any real plate (micro-plates stop
+ * at 0.25kg) yet coarse enough that a pound value survives the round trip: 235 lb -> 106.6kg
+ * -> 235 lb, 135 -> 61.25 -> 135, 185 -> 83.9 -> 185.
+ */
+const WEIGHT_STEP_KG = 0.05
+
+const snap = (n: number, step: number) => Math.round(n / step) * step
+
+/** Display number → canonical kg, snapped so no unloggable value is ever stored. */
 export function parseWeight(input: string, u: UnitSystem): number | undefined {
   const n = numeric(input)
   if (!Number.isFinite(n) || n < 0) return undefined
-  return u === "metric" ? n : lbToKg(n)
+  // Rounded after conversion, then again to kill the float dust 0.05 division leaves behind.
+  return Number(snap(u === "metric" ? n : lbToKg(n), WEIGHT_STEP_KG).toFixed(2))
 }
 
 export const mToKm = (m: number): number => m / 1000
@@ -77,10 +91,11 @@ export function formatDistance(m: number | undefined, u: UnitSystem): string {
   return `${distanceValue(m, u)} ${distanceUnit(u)}`
 }
 
+/** Display number → canonical metres, to the nearest metre. Sub-metre precision is noise. */
 export function parseDistance(input: string, u: UnitSystem): number | undefined {
   const n = numeric(input)
   if (!Number.isFinite(n) || n < 0) return undefined
-  return u === "metric" ? kmToM(n) : kmToM(n / MI_PER_KM)
+  return Math.round(u === "metric" ? kmToM(n) : kmToM(n / MI_PER_KM))
 }
 
 /** Seconds → `1:30`, or `1:02:30` once it passes an hour. */

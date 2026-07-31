@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import { byId } from "./catalog"
-import { fingerprint } from "./samples"
+import { fingerprint, prefixOf } from "./samples"
 import { dayEntries, personalRecordIds } from "./select"
-import { acknowledgeDivergence, planPush } from "./remote"
+import { planPush } from "./remote"
 import type { RemoteConfig, SetEntry } from "./types"
 
 let n = 0
@@ -112,7 +112,10 @@ describe("push planning", () => {
   const pushedState = (sets: SetEntry[]): RemoteConfig => ({
     ...base,
     pushed: Object.fromEntries(
-      sets.map((s) => [s.id, fingerprint(s, byId(s.exerciseId)!)]),
+      sets.map((s) => [
+        s.id,
+        { fp: fingerprint(s, byId(s.exerciseId)!), at: Date.parse(s.loggedAt), prefix: prefixOf(byId(s.exerciseId)!) },
+      ]),
     ),
   })
 
@@ -143,47 +146,59 @@ describe("push planning", () => {
     expect(plan.fresh).toHaveLength(0)
 
     const deleted = planPush(config, [sets[0]!])
-    expect(deleted.deletedIds).toEqual(["s2"])
+    expect(deleted.tombstones.map((t) => t.id)).toEqual(["s2"])
   })
 })
 
-describe("dismissing divergence", () => {
+describe("an edit repairs itself on the next push", () => {
   const base: RemoteConfig = { url: "https://x/ingest", token: "t", pushed: {} }
   const pushedState = (sets: SetEntry[]): RemoteConfig => ({
     ...base,
-    pushed: Object.fromEntries(sets.map((s) => [s.id, fingerprint(s, byId(s.exerciseId)!)])),
+    pushed: Object.fromEntries(
+      sets.map((s) => [
+        s.id,
+        { fp: fingerprint(s, byId(s.exerciseId)!), at: Date.parse(s.loggedAt), prefix: prefixOf(byId(s.exerciseId)!) },
+      ]),
+    ),
   })
 
-  it("clears the notice without queuing anything to send", () => {
-    // The whole point: neither a delete nor an edit can be repaired remotely, so the only
-    // honest action is to stop reporting them. It must not turn them into pending pushes.
+  it("retracts the old samples and rewrites clear of them", () => {
+    // Re-sending in place can't work: dedup keeps the larger value per field, so a lowered
+    // weight beside raised reps would leave a set that never happened. And the rewrite has to
+    // clear the tombstone's timestamp, or the retraction swallows the correction too.
+    reset()
+    const original = set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 })
+    const config = pushedState([original])
+    const edited = [{ ...original, weightKg: 90 }]
+
+    const plan = planPush(config, edited)
+    expect(plan.changed).toHaveLength(1)
+    expect(plan.tombstones).toHaveLength(1)
+    expect(plan.tombstones[0]!.at).toBe(Date.parse(original.loggedAt))
+    // Flagged as a rewrite rather than a removal, so the UI can say "edited" not "deleted".
+    expect(plan.tombstones[0]!.replaced).toBe(true)
+  })
+
+  it("marks a genuine delete as not replaced", () => {
     reset()
     const sets = [
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 }),
       set("plank.bodyweight", "2026-07-31", "16:10:00", { durationSec: 60 }),
-      set("push_up.bodyweight", "2026-07-31", "16:20:00", { reps: 30 }),
     ]
-    const config = pushedState(sets)
-    // One deleted, one edited.
-    const now = [{ ...sets[0]!, weightKg: 90 }, sets[2]!]
-
-    const before = planPush(config, now)
-    expect(before.deletedIds).toHaveLength(1)
-    expect(before.changed).toHaveLength(1)
-
-    const after = planPush(acknowledgeDivergence(config, now), now)
-    expect(after.deletedIds).toEqual([])
-    expect(after.changed).toEqual([])
-    expect(after.fresh).toEqual([])
+    const plan = planPush(pushedState(sets), [sets[0]!])
+    expect(plan.tombstones).toHaveLength(1)
+    expect(plan.tombstones[0]!.id).toBe("s2")
+    expect(plan.tombstones[0]!.replaced).toBe(false)
   })
 
-  it("leaves genuinely unsent sets alone", () => {
+  it("treats a changed time as an edit, since the timestamp is the set's identity", () => {
     reset()
-    const pushed = [set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 })]
-    const config = pushedState(pushed)
-    const withNew = [...pushed, set("plank.bodyweight", "2026-07-31", "16:10:00", { durationSec: 60 })]
+    const original = set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 })
+    const config = pushedState([original])
+    const moved = [{ ...original, loggedAt: new Date("2026-07-31T18:30:00-07:00").toISOString() }]
 
-    const after = planPush(acknowledgeDivergence(config, withNew), withNew)
-    expect(after.fresh.map((s) => s.id)).toEqual(["s2"])
+    const plan = planPush(config, moved)
+    expect(plan.changed).toHaveLength(1)
+    expect(plan.tombstones[0]!.at).toBe(Date.parse(original.loggedAt))
   })
 })

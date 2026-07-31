@@ -22,7 +22,7 @@ describe("remote config survives a round trip", () => {
     token: "abc123",
     autoPush: true,
     lastSyncedAt: "2026-07-31T20:15:00.000Z",
-    pushed: { s1: "fp1", s2: "fp2" },
+    pushed: { s1: { fp: "fp1", at: 1785481200000, prefix: "barbell_squat" } },
   }
 
   it("keeps every field", () => {

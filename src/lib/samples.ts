@@ -20,9 +20,26 @@ import type { Exercise, SetEntry } from "./types"
  *
  * `_sets` is deliberately not stored — `count_over_time(x_volume[1d])` already is the set
  * count, and a stored copy could only ever disagree with it.
+ *
+ * ## Deletions
+ *
+ * The store only appends, and its delete API is deliberately not exposed. A removed set is
+ * therefore recorded as a *tombstone*: a `<exercise>_deleted` sample carrying the value 1,
+ * stamped at the voided set's own timestamp.
+ *
+ *   health_barbell_squat_deleted  1  @ 09:14:03   <- voids the set logged at 09:14:03
+ *
+ * The timestamp is the identifier, so nothing depends on a value surviving float formatting.
+ * Everything that reads this data replays the same rule: fetch the tombstones, drop the
+ * samples they point at. The app does it in `reconstruct`, and the dashboard does it in panel
+ * JavaScript. The server keeps the whole event log and stays authoritative; no reader is
+ * allowed a private opinion about what was deleted.
  */
 
 export type Measure = "weight" | "reps" | "volume" | "seconds" | "metres"
+
+/** Not a measure: marks the sample at the same timestamp as void. */
+export const TOMBSTONE = "deleted"
 
 /** `Barbell Squat` -> `barbell_squat`. Matches what the shim's own sanitiser would produce. */
 export function slug(name: string): string {
@@ -44,6 +61,9 @@ export function exerciseForPrefix(prefix: string): Exercise | undefined {
 }
 
 const MEASURES: Measure[] = ["weight", "reps", "volume", "seconds", "metres"]
+
+/** Everything a reader has to fetch to know the true state, tombstones included. */
+const READABLE = [...MEASURES, TOMBSTONE]
 
 /** The measures a single set contributes, keyed by measure. */
 export function measuresOf(set: SetEntry, ex: Exercise): Partial<Record<Measure, number>> {
@@ -101,7 +121,24 @@ export interface Sample {
  * are nudged forward a millisecond each, which is far below the resolution anyone reads.
  */
 export function samplesFor(sets: SetEntry[]): Sample[] {
+  return buildSamples(sets).samples
+}
+
+/**
+ * Samples plus the timestamp each set was actually assigned.
+ *
+ * The caller needs the second half: a nudged set lands a millisecond off its own `loggedAt`,
+ * and a tombstone written later has to point at where the samples really are, not where they
+ * were meant to go.
+ */
+export function buildSamples(sets: SetEntry[]): {
+  samples: Sample[]
+  stampBySetId: Map<string, number>
+  prefixBySetId: Map<string, string>
+} {
   const used = new Map<string, Set<number>>()
+  const stampBySetId = new Map<string, number>()
+  const prefixBySetId = new Map<string, string>()
   const out: Sample[] = []
 
   // Stable order so the same input always produces the same nudges.
@@ -126,12 +163,15 @@ export function samplesFor(sets: SetEntry[]): Sample[] {
     taken.add(ms)
     used.set(prefix, taken)
 
+    stampBySetId.set(set.id, ms)
+    prefixBySetId.set(set.id, prefix)
+
     const at = rfc3339Local(new Date(ms))
     for (const measure of keys) {
       out.push({ metric: `${prefix}_${measure}`, at, value: measures[measure] as number })
     }
   }
-  return out
+  return { samples: out, stampBySetId, prefixBySetId }
 }
 
 /** Samples grouped into the shim's payload shape: metric -> timestamp -> value. */
@@ -152,15 +192,41 @@ export function payloadFor(sets: SetEntry[]): Record<string, Record<string, numb
  * `health_weight` would otherwise look a lot like one of ours.
  */
 export function readSelector(): string {
-  return `{__name__=~"health_.+_(${MEASURES.join("|")})"}`
+  return `{__name__=~"health_.+_(${READABLE.join("|")})"}`
 }
 
-/** Splits a metric name into its exercise prefix and measure, or null if it isn't ours. */
-export function parseMetric(name: string): { prefix: string; measure: Measure } | null {
+/**
+ * Splits a metric name into its exercise prefix and what it carries, or null if it isn't ours.
+ * `kind` distinguishes a measurement from a tombstone.
+ */
+export function parseMetric(
+  name: string,
+): { prefix: string; measure: Measure; kind: "measure" } | { prefix: string; kind: "tombstone" } | null {
   const bare = name.startsWith("health_") ? name.slice("health_".length) : name
   const idx = bare.lastIndexOf("_")
   if (idx <= 0) return null
-  const measure = bare.slice(idx + 1) as Measure
-  if (!MEASURES.includes(measure)) return null
-  return { prefix: bare.slice(0, idx), measure }
+  const suffix = bare.slice(idx + 1)
+  const prefix = bare.slice(0, idx)
+  if (suffix === TOMBSTONE) return { prefix, kind: "tombstone" }
+  if (!MEASURES.includes(suffix as Measure)) return null
+  return { prefix, measure: suffix as Measure, kind: "measure" }
+}
+
+/**
+ * Tombstone samples for sets that were removed after being pushed.
+ *
+ * `at` is the millisecond timestamp the set was originally written at, which is why the push
+ * bookkeeping records it: the set is gone locally, so its own `loggedAt` is no longer around
+ * to recompute from.
+ */
+export function tombstonePayload(
+  voided: { prefix: string; at: number }[],
+): Record<string, Record<string, number>> {
+  const payload: Record<string, Record<string, number>> = {}
+  for (const { prefix, at } of voided) {
+    const metric = `${prefix}_${TOMBSTONE}`
+    const byTime = (payload[metric] ??= {})
+    byTime[rfc3339Local(new Date(at))] = 1
+  }
+  return payload
 }

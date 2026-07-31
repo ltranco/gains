@@ -6,7 +6,7 @@ import { SubPageBar } from "@/components/TopBar"
 import { Alert, Check, Close, Spinner } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { formatStamp, todayKey } from "@/lib/date"
-import { acknowledgeDivergence, applyPull, planPush, pullSets, pushSets } from "@/lib/remote"
+import { applyPull, planPush, pullSets, pushSets } from "@/lib/remote"
 import { parseState } from "@/lib/store"
 import type { ClockFormat, ThemeChoice, UnitSystem } from "@/lib/types"
 import { useRemote } from "@/providers/RemoteProvider"
@@ -257,8 +257,7 @@ function StorageSection() {
   const error =
     push.kind === "error" ? push.message : pull.kind === "error" ? pull.message : autoError
 
-  const pending = plan.fresh.length
-  const stale = plan.changed.length + plan.deletedIds.length
+  const pending = plan.fresh.length + plan.changed.length + plan.tombstones.length
 
   return (
     <Section label="Storage">
@@ -328,30 +327,17 @@ function StorageSection() {
       )}
 
       {!error && pending > 0 && (
-        <Note>
-          {pending} {pending === 1 ? "set" : "sets"} to push
-        </Note>
-      )}
-
-      {!error && stale > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span
-            className="flex items-center gap-1.5 text-[13px]"
-            style={{ color: "var(--text-muted)" }}
-          >
-            <Alert size={14} />
-            {[
-              plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
-              plan.changed.length > 0 && `${plan.changed.length} edited`,
-            ]
-              .filter(Boolean)
-              .join(", ")}{" "}
-            after pushing. Push can&apos;t undo those.
-          </span>
-          <Button onClick={() => setConfig(acknowledgeDivergence(config, state.sets))}>
-            Dismiss
-          </Button>
-        </div>
+        <Status>
+          {[
+            plan.fresh.length > 0 && `${plan.fresh.length} new`,
+            plan.changed.length > 0 && `${plan.changed.length} edited`,
+            plan.tombstones.filter((t) => !t.replaced).length > 0 &&
+              `${plan.tombstones.filter((t) => !t.replaced).length} deleted`,
+          ]
+            .filter(Boolean)
+            .join(", ")}{" "}
+          to sync
+        </Status>
       )}
 
       <div className="mt-4 flex flex-col items-start gap-1.5">

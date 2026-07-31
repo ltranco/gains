@@ -91,11 +91,31 @@ export function readRemote(): RemoteConfig {
       token: typeof c.token === "string" ? c.token : "",
       autoPush: c.autoPush === true,
       ...(typeof c.lastSyncedAt === "string" ? { lastSyncedAt: c.lastSyncedAt } : {}),
-      pushed: typeof c.pushed === "object" && c.pushed !== null ? c.pushed : {},
+      pushed: normalisePushed(c.pushed),
     }
   } catch {
     return EMPTY_REMOTE
   }
+}
+
+/**
+ * Tolerates the older shape, where each entry was a bare fingerprint string with no record of
+ * when the samples were written. Those entries can still detect an edit; they just can't be
+ * tombstoned, so they're dropped rather than kept in a state that would silently do nothing.
+ */
+function normalisePushed(
+  raw: unknown,
+): Record<string, { fp: string; at: number; prefix: string }> {
+  if (typeof raw !== "object" || raw === null) return {}
+  const out: Record<string, { fp: string; at: number; prefix: string }> = {}
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v !== "object" || v === null) continue
+    const e = v as { fp?: unknown; at?: unknown; prefix?: unknown }
+    if (typeof e.fp === "string" && typeof e.at === "number" && typeof e.prefix === "string") {
+      out[id] = { fp: e.fp, at: e.at, prefix: e.prefix }
+    }
+  }
+  return out
 }
 
 export function writeRemote(config: RemoteConfig): void {

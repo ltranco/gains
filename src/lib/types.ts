@@ -90,11 +90,11 @@ export interface RemoteConfig {
   autoPush?: boolean
   lastSyncedAt?: string
   /**
-   * Set id -> fingerprint of what was last sent. Lets a push skip sets already stored, and
-   * lets the UI tell you which sets have since been edited or deleted locally — neither of
-   * which can propagate to an append-only store.
+   * Set id -> what was sent and when. `fp` detects a local edit; `at` is the millisecond
+   * timestamp the samples were written at, which is the only way to address them once the
+   * set no longer exists locally — a tombstone has to point somewhere.
    */
-  pushed?: Record<string, string>
+  pushed?: Record<string, { fp: string; at: number; prefix: string }>
 }
 
 export interface GainsState {

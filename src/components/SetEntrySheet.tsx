@@ -27,13 +27,23 @@ interface Draft {
   reps: string
   duration: string
   distance: string
+  /** `HH:mm`, editing only. The set's own timestamp, which is also its identity remotely. */
+  time: string
 }
 
-const EMPTY_DRAFT: Draft = { weight: "", reps: "", duration: "", distance: "" }
+const EMPTY_DRAFT: Draft = { weight: "", reps: "", duration: "", distance: "", time: "" }
+
+const clockValue = (iso: string): string => {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  const p = (n: number) => n.toString().padStart(2, "0")
+  return `${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 function draftFrom(set: SetEntry | undefined, units: UnitSystem): Draft {
   if (!set) return EMPTY_DRAFT
   return {
+    time: clockValue(set.loggedAt),
     weight: set.weightKg === undefined ? "" : weightValue(set.weightKg, units),
     reps: set.reps === undefined ? "" : String(set.reps),
     duration: set.durationSec === undefined ? "" : formatDuration(set.durationSec),
@@ -89,7 +99,10 @@ export function SetEntrySheet({
     setError(null)
 
     if (editing) {
-      updateSet(editing.id, built.value)
+      // A changed time moves the set's identity, so it goes through the same repair path as
+      // any other edit: the old samples are retracted and rewritten at the new instant.
+      const at = movedTo(editing, draft.time)
+      updateSet(editing.id, { ...built.value, ...(at ? { loggedAt: at } : {}) })
     } else {
       addSet({ exerciseId: exercise.id, date, ...built.value })
     }
@@ -206,6 +219,17 @@ export function SetEntrySheet({
           </>
         )}
 
+        {/* Last, and deliberately quiet: you are correcting a record, not logging one. */}
+        {editing && (
+          <TextField
+            label="Time"
+            hint="24-hour"
+            value={draft.time}
+            onChange={(time) => setDraft((d) => ({ ...d, time }))}
+            placeholder="14:32"
+          />
+        )}
+
         {previous && !editing && (
           <p className="text-[12px]" style={{ color: "var(--text-faint)" }}>
             Last time: {summarise(previous, exercise, units)}
@@ -223,6 +247,22 @@ export function SetEntrySheet({
       </form>
     </Sheet>
   )
+}
+
+/**
+ * The set's instant with the clock face replaced, or null if the field is blank or unparseable.
+ * The calendar day never moves: that is what the date stepper is for.
+ */
+function movedTo(set: SetEntry, time: string): string | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim())
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h > 23 || min > 59) return null
+  const d = new Date(set.loggedAt)
+  if (Number.isNaN(d.getTime())) return null
+  d.setHours(h, min, 0, 0)
+  return d.toISOString()
 }
 
 type Built =

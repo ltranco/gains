@@ -1,12 +1,10 @@
 import { byId } from "./catalog"
 import { reconstruct } from "./reconstruct"
-import { fingerprint, payloadFor, readSelector } from "./samples"
+import { buildSamples, fingerprint, payloadFor, readSelector, tombstonePayload } from "./samples"
 import type { GainsState, RemoteConfig, SetEntry } from "./types"
 
 /**
  * Client side of the bring-your-own storage layer.
- *
- * Two capabilities, both optional to the backend:
  *
  *   push — POST <ingestUrl>  { "<metric>": { "<rfc3339>": <number> } }
  *   pull — GET  <readUrl>?match[]=…  ->  VictoriaMetrics export JSON Lines
@@ -14,27 +12,44 @@ import type { GainsState, RemoteConfig, SetEntry } from "./types"
  * Both carry `Authorization: Bearer <token>` — one credential. Both go through
  * `/api/remote` on our own origin so an arbitrary endpoint needn't serve CORS headers.
  *
- * The remote is append-only. New sets propagate; **edits and deletes do not**, because
- * VictoriaMetrics keeps the biggest value on a timestamp tie and its delete API isn't
- * exposed. Rather than half-apply an edit — weight rising while reps fall — we don't re-send
- * changed sets at all, and report them as divergence instead.
+ * The store only appends and its delete API is not exposed, so removing a set is itself an
+ * append: a tombstone at the removed set's timestamp. Push sends those alongside new sets, and
+ * every reader — this app and the dashboard's panel JS — replays the same rule. The server
+ * holds the whole event log and stays authoritative.
  */
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
+export interface Tombstone {
+  /** Local set id, so bookkeeping can be cleared once the tombstone lands. */
+  id: string
+  prefix: string
+  at: number
+  /** True when the set still exists locally and is being rewritten rather than removed. */
+  replaced: boolean
+}
+
 export interface PushPlan {
-  /** Sets never sent before. These are the only ones that get written. */
+  /** Sets never sent before. */
   fresh: SetEntry[]
-  /** Sets already sent whose values have since changed locally. Cannot be corrected remotely. */
+  /** Sets deleted locally after being pushed. Each becomes a tombstone. */
+  tombstones: Tombstone[]
+  /**
+   * Sets edited after being pushed. Repaired the same way a delete is: tombstone the samples
+   * at their old timestamp, then write the new values at a fresh one.
+   *
+   * Re-sending in place cannot work. The samples sit at a fixed timestamp and dedup keeps the
+   * larger value per field, so lowering a weight while raising the reps would leave the store
+   * holding a set that never happened. And the new copy has to land at least a millisecond
+   * clear of the old, or the tombstone that voids the original voids the correction with it.
+   */
   changed: SetEntry[]
-  /** Ids sent previously that no longer exist locally. Still present remotely, forever. */
-  deletedIds: string[]
   sampleCount: number
 }
 
 export function planPush(config: RemoteConfig, sets: SetEntry[]): PushPlan {
   const pushed = config.pushed ?? {}
-  const live = new Set(sets.map((s) => s.id))
+  const live = new Map(sets.map((s) => [s.id, s]))
 
   const fresh: SetEntry[] = []
   const changed: SetEntry[] = []
@@ -42,18 +57,26 @@ export function planPush(config: RemoteConfig, sets: SetEntry[]): PushPlan {
   for (const set of sets) {
     const ex = byId(set.exerciseId)
     if (!ex) continue
-    const fp = fingerprint(set, ex)
     const seen = pushed[set.id]
     if (seen === undefined) fresh.push(set)
-    else if (seen !== fp) changed.push(set)
+    else if (seen.fp !== fingerprint(set, ex)) changed.push(set)
   }
 
-  const deletedIds = Object.keys(pushed).filter((id) => !live.has(id))
-  const sampleCount = Object.values(payloadFor(fresh)).reduce(
-    (n, byTime) => n + Object.keys(byTime).length,
-    0,
-  )
-  return { fresh, changed, deletedIds, sampleCount }
+  const tombstones: Tombstone[] = []
+  for (const [id, entry] of Object.entries(pushed)) {
+    // Deleted, or edited: both retract what is stored. An edit then re-lands as a fresh set.
+    if (!live.has(id) || changed.some((s) => s.id === id)) {
+      tombstones.push({ id, prefix: entry.prefix, at: entry.at, replaced: live.has(id) })
+    }
+  }
+
+  const sampleCount =
+    Object.values(payloadFor([...fresh, ...changed])).reduce(
+      (n, byTime) => n + Object.keys(byTime).length,
+      0,
+    ) + tombstones.length
+
+  return { fresh, tombstones, changed, sampleCount }
 }
 
 /** Keeps each request comfortably under the shim's 1MB body limit. */
@@ -69,34 +92,60 @@ export async function pushSets(
   sets: SetEntry[],
 ): Promise<Result<PushOutcome>> {
   const plan = planPush(config, sets)
-  if (plan.fresh.length === 0) {
+  if (plan.fresh.length === 0 && plan.tombstones.length === 0 && plan.changed.length === 0) {
     return { ok: true, value: { ...plan, written: 0, config } }
   }
 
   const pushed = { ...(config.pushed ?? {}) }
   let written = 0
 
-  for (let i = 0; i < plan.fresh.length; i += SETS_PER_REQUEST) {
-    const batch = plan.fresh.slice(i, i + SETS_PER_REQUEST)
+  // An edited set is rewritten at least a millisecond past where it used to live, so the
+  // tombstone retracting the original cannot swallow the correction as well.
+  const previous = new Map(plan.tombstones.map((t) => [t.id, t.at]))
+  const rewritten = plan.changed.map((set) => {
+    const old = previous.get(set.id) ?? 0
+    const wanted = Date.parse(set.loggedAt)
+    return wanted > old ? set : { ...set, loggedAt: new Date(old + 1).toISOString() }
+  })
+  const outgoing = [...plan.fresh, ...rewritten]
+
+  // Tombstones first. If the run dies halfway, the store having forgotten a set it should
+  // forget is a better resting place than it holding one it shouldn't.
+  if (plan.tombstones.length > 0) {
+    const res = await call({
+      url: config.url,
+      token: config.token,
+      payload: tombstonePayload(plan.tombstones),
+    })
+    if (!res.ok) return { ok: false, error: res.error }
+    written += res.value.written ?? 0
+    for (const t of plan.tombstones) delete pushed[t.id]
+  }
+
+  for (let i = 0; i < outgoing.length; i += SETS_PER_REQUEST) {
+    const batch = outgoing.slice(i, i + SETS_PER_REQUEST)
     const res = await call({
       url: config.url,
       token: config.token,
       payload: payloadFor(batch),
     })
     if (!res.ok) {
-      // Persist what did land, so a retry doesn't duplicate the successful batches.
       return {
         ok: false,
         error:
-          i === 0
-            ? res.error
-            : `${res.error} (${written} samples written before the failure)`,
+          written === 0 ? res.error : `${res.error} (${written} samples written before the failure)`,
       }
     }
     written += res.value.written ?? 0
+    // Record where each set actually landed, collision nudge included, so a later tombstone
+    // points at the sample that exists rather than the one we intended to write.
+    const { stampBySetId, prefixBySetId } = buildSamples(batch)
     for (const set of batch) {
       const ex = byId(set.exerciseId)
-      if (ex) pushed[set.id] = fingerprint(set, ex)
+      const at = stampBySetId.get(set.id)
+      const prefix = prefixBySetId.get(set.id)
+      if (!ex || at === undefined || prefix === undefined) continue
+      pushed[set.id] = { fp: fingerprint(set, ex), at, prefix }
     }
   }
 
@@ -112,6 +161,7 @@ export async function pushSets(
 
 export interface PullOutcome {
   sets: SetEntry[]
+  voided: number
   unknownPrefixes: string[]
   config: RemoteConfig
 }
@@ -126,27 +176,31 @@ export async function pullSets(config: RemoteConfig): Promise<Result<PullOutcome
     token: config.token,
     read: {
       "match[]": readSelector(),
-      // A range wide enough to be "everything" without relying on export's defaults.
       start: "2000-01-01T00:00:00Z",
       end: new Date(Date.now() + 86_400_000).toISOString(),
     },
   })
   if (!res.ok) return res
 
-  const { sets, unknownPrefixes } = reconstruct(res.value.body ?? "")
+  const { sets, voided, unknownPrefixes } = reconstruct(res.value.body ?? "")
 
-  // A pulled set is by definition already on the remote, so record it as pushed. Without
-  // this, the next push would re-send everything it just read back.
-  const pushed: Record<string, string> = {}
+  // A pulled set is by definition already stored, at the timestamp it came back on.
+  const pushed: Record<string, { fp: string; at: number; prefix: string }> = {}
+  const { stampBySetId, prefixBySetId } = buildSamples(sets)
   for (const set of sets) {
     const ex = byId(set.exerciseId)
-    if (ex) pushed[set.id] = fingerprint(set, ex)
+    const at = stampBySetId.get(set.id)
+    const prefix = prefixBySetId.get(set.id)
+    if (ex && at !== undefined && prefix !== undefined) {
+      pushed[set.id] = { fp: fingerprint(set, ex), at, prefix }
+    }
   }
 
   return {
     ok: true,
     value: {
       sets,
+      voided,
       unknownPrefixes,
       config: { ...config, pushed, lastSyncedAt: new Date().toISOString() },
     },
@@ -160,20 +214,14 @@ interface CallBody {
   read?: Record<string, string>
 }
 
-async function call(
-  body: CallBody,
-): Promise<Result<{ written?: number; body?: string }>> {
+async function call(body: CallBody): Promise<Result<{ written?: number; body?: string }>> {
   try {
     const res = await fetch("/api/remote", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     })
-    const data = (await res.json()) as {
-      error?: string
-      written?: number
-      body?: string
-    }
+    const data = (await res.json()) as { error?: string; written?: number; body?: string }
     if (!res.ok) return { ok: false, error: data.error ?? `Request failed (${res.status}).` }
     return { ok: true, value: data }
   } catch (e) {
@@ -184,34 +232,6 @@ async function call(
 /** Forgets push bookkeeping so the next push re-sends every set. */
 export function resetPushState(config: RemoteConfig): RemoteConfig {
   return { ...config, pushed: {} }
-}
-
-/**
- * Stops reporting sets that diverged, without sending anything.
- *
- * Neither kind of divergence can be repaired: the store only appends, so a deleted set stays
- * there and an edited one keeps its original value. Reporting them forever with no way to act
- * is worse than useless, because it reads as "you have unsynced work" when there is nothing to
- * sync. This accepts the remote as it stands.
- *
- * Deleted sets are dropped from the bookkeeping entirely. Edited sets keep their entry, updated
- * to the current local values, so they aren't re-offered as fresh on the next push, which would
- * half-apply the edit: dedup keeps the larger value per field, so a weight going up and reps
- * coming down would leave the remote holding a set that never happened.
- */
-export function acknowledgeDivergence(
-  config: RemoteConfig,
-  sets: SetEntry[],
-): RemoteConfig {
-  const plan = planPush(config, sets)
-  const pushed = { ...(config.pushed ?? {}) }
-
-  for (const id of plan.deletedIds) delete pushed[id]
-  for (const set of plan.changed) {
-    const ex = byId(set.exerciseId)
-    if (ex) pushed[set.id] = fingerprint(set, ex)
-  }
-  return { ...config, pushed }
 }
 
 /** Local state with a pulled set list swapped in, preferences untouched. */

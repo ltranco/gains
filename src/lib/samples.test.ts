@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { reconstruct } from "./reconstruct"
-import { parseMetric, payloadFor, readSelector } from "./samples"
+import { parseMetric, payloadFor, readSelector, tombstonePayload } from "./samples"
 import type { SetEntry } from "./types"
 
 let n = 0
@@ -84,7 +84,9 @@ describe("timestamps must be unique per exercise", () => {
 
 describe("the read selector can't sweep up the rest of the stack", () => {
   it("is anchored on the measure suffix", () => {
-    expect(readSelector()).toBe('{__name__=~"health_.+_(weight|reps|volume|seconds|metres)"}')
+    expect(readSelector()).toBe(
+      '{__name__=~"health_.+_(weight|reps|volume|seconds|metres|deleted)"}',
+    )
   })
 
   it("ignores the iOS health metrics", () => {
@@ -98,13 +100,13 @@ describe("the read selector can't sweep up the rest of the stack", () => {
     expect(parseMetric("health_barbell_squat_volume")).toEqual({
       prefix: "barbell_squat",
       measure: "volume",
+      kind: "measure",
     })
   })
 })
 
-describe("round trip through the storage format", () => {
-  /** Re-encodes a payload the way VictoriaMetrics' export endpoint emits it. */
-  const asExportJsonl = (sets: SetEntry[]) =>
+/** Re-encodes a payload the way VictoriaMetrics' export endpoint emits it. */
+const exportLines = (sets: SetEntry[]) =>
     Object.entries(payloadFor(sets))
       .map(([metric, byTime]) => {
         const pairs = Object.entries(byTime)
@@ -116,11 +118,12 @@ describe("round trip through the storage format", () => {
           timestamps: pairs.map((x) => x[0]),
         })
       })
-      .join("\n")
+    .join("\n")
 
+describe("round trip through the storage format", () => {
   it("recovers every set exactly", () => {
     const original = SESSION()
-    const { sets, unknownPrefixes } = reconstruct(asExportJsonl(original))
+    const { sets, unknownPrefixes } = reconstruct(exportLines(original))
     expect(unknownPrefixes).toEqual([])
     expect(sets).toHaveLength(original.length)
 
@@ -157,5 +160,72 @@ describe("round trip through the storage format", () => {
   it("survives malformed input", () => {
     expect(reconstruct("").sets).toEqual([])
     expect(reconstruct("not json\n{").sets).toEqual([])
+  })
+})
+
+describe("deletion is an append, not a delete", () => {
+  it("writes a tombstone at the voided set's own timestamp", () => {
+    const at = Date.parse("2026-07-31T09:14:03.000-07:00")
+    const p = tombstonePayload([{ prefix: "barbell_squat", at }])
+    expect(Object.keys(p)).toEqual(["barbell_squat_deleted"])
+    const stamps = Object.keys(p.barbell_squat_deleted ?? {})
+    expect(Date.parse(stamps[0]!)).toBe(at)
+    // The value is only ever 1: the timestamp is the identifier, so nothing depends on a
+    // number surviving float formatting on the way through the shim.
+    expect(Object.values(p.barbell_squat_deleted ?? {})).toEqual([1])
+  })
+
+  it("is fetched by the read selector", () => {
+    expect(readSelector()).toContain("deleted")
+    expect(parseMetric("health_barbell_squat_deleted")).toEqual({
+      prefix: "barbell_squat",
+      kind: "tombstone",
+    })
+  })
+
+  it("suppresses the set it points at, and only that one", () => {
+    n = 0
+    const sets = [
+      set("squat.barbell", "2026-07-31", "09:14:03", { weightKg: 100, reps: 5 }),
+      set("squat.barbell", "2026-07-31", "09:21:11", { weightKg: 100, reps: 5 }),
+      set("plank.bodyweight", "2026-07-31", "09:45:00", { durationSec: 90 }),
+    ]
+    const doomed = Date.parse(sets[0]!.loggedAt)
+
+    const jsonl = [
+      exportLines(sets),
+      JSON.stringify({
+        metric: { __name__: "health_barbell_squat_deleted" },
+        values: [1],
+        timestamps: [doomed],
+      }),
+    ].join("\n")
+
+    const r = reconstruct(jsonl)
+    expect(r.voided).toBe(1)
+    expect(r.sets).toHaveLength(2)
+    expect(r.sets.some((s) => Date.parse(s.loggedAt) === doomed)).toBe(false)
+    // The other squat set and the plank are untouched.
+    expect(r.sets.filter((s) => s.exerciseId === "squat.barbell")).toHaveLength(1)
+    expect(r.sets.filter((s) => s.exerciseId === "plank.bodyweight")).toHaveLength(1)
+  })
+
+  it("does not void a different exercise sharing that timestamp", () => {
+    n = 0
+    const sets = [
+      set("squat.barbell", "2026-07-31", "09:14:03", { weightKg: 100, reps: 5 }),
+      set("bench_press.barbell", "2026-07-31", "09:14:03", { weightKg: 60, reps: 5 }),
+    ]
+    const at = Date.parse(sets[0]!.loggedAt)
+    const jsonl = [
+      exportLines(sets),
+      JSON.stringify({
+        metric: { __name__: "health_barbell_squat_deleted" },
+        values: [1],
+        timestamps: [at],
+      }),
+    ].join("\n")
+    const r = reconstruct(jsonl)
+    expect(r.sets.map((s) => s.exerciseId)).toEqual(["bench_press.barbell"])
   })
 })

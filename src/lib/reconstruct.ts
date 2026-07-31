@@ -17,6 +17,8 @@ import type { SetEntry } from "./types"
 
 export interface ReconstructResult {
   sets: SetEntry[]
+  /** How many stored sets were suppressed by a tombstone. */
+  voided: number
   /** Metric names that looked like ours but named no exercise in the catalog. */
   unknownPrefixes: string[]
   /** Series skipped because they aren't ours at all (health_step, health_weight, …). */
@@ -32,6 +34,8 @@ interface ExportLine {
 export function reconstruct(jsonl: string): ReconstructResult {
   // prefix -> timestamp(ms) -> measure -> value
   const grouped = new Map<string, Map<number, Partial<Record<Measure, number>>>>()
+  // Sets the server has been told to forget, keyed the same way.
+  const voided = new Set<string>()
   const unknown = new Set<string>()
   let skipped = 0
 
@@ -61,8 +65,15 @@ export function reconstruct(jsonl: string): ReconstructResult {
 
     const values = Array.isArray(parsed.values) ? parsed.values : []
     const stamps = Array.isArray(parsed.timestamps) ? parsed.timestamps : []
-    const byStamp = grouped.get(split.prefix) ?? new Map()
 
+    if (split.kind === "tombstone") {
+      for (const t of stamps) {
+        if (typeof t === "number") voided.add(`${split.prefix}@${t}`)
+      }
+      continue
+    }
+
+    const byStamp = grouped.get(split.prefix) ?? new Map()
     for (let i = 0; i < Math.min(values.length, stamps.length); i++) {
       const v = values[i]
       const t = stamps[i]
@@ -80,6 +91,9 @@ export function reconstruct(jsonl: string): ReconstructResult {
     if (!exercise) continue
 
     for (const [ms, measures] of byStamp) {
+      // A tombstone at this exact timestamp means the set was deleted after being pushed.
+      // The samples remain in the store forever; the deletion is what's authoritative.
+      if (voided.has(`${prefix}@${ms}`)) continue
       const when = new Date(ms)
       const set: SetEntry = {
         id: newId(),
@@ -115,5 +129,5 @@ export function reconstruct(jsonl: string): ReconstructResult {
   }
 
   sets.sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
-  return { sets, unknownPrefixes: [...unknown], skippedSeries: skipped }
+  return { sets, voided: voided.size, unknownPrefixes: [...unknown], skippedSeries: skipped }
 }

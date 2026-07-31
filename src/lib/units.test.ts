@@ -95,3 +95,33 @@ describe("reps validation", () => {
     expect(parseReps("abc")).toBeUndefined()
   })
 })
+
+describe("conversion never stores an unloggable number", () => {
+  it("keeps common pound plate loads clean in both units", () => {
+    // 235 lb is 106.5941831..kg. Stored raw, the metric view shows a number no plate can make
+    // and every volume derived from it inherits the dust.
+    for (const lb of [45, 95, 135, 185, 205, 225, 235, 315, 405]) {
+      const kg = parseWeight(String(lb), "imperial") as number
+      expect(Number.isInteger(Math.round(kg * 100)), `${lb}lb -> ${kg}kg`).toBe(true)
+      expect(kg.toString().replace("-", "").split(".")[1]?.length ?? 0).toBeLessThanOrEqual(2)
+      // and it still reads back as the pound value you typed
+      expect(weightValue(kg, "imperial")).toBe(String(lb))
+    }
+  })
+
+  it("leaves metric entries exactly as typed", () => {
+    for (const kg of [20, 60, 62.5, 100, 102.5, 140]) {
+      expect(parseWeight(String(kg), "metric")).toBe(kg)
+    }
+  })
+
+  it("snaps a silly input rather than storing it", () => {
+    expect(parseWeight("108.82829282", "metric")).toBe(108.85)
+    expect(parseWeight("100.01", "metric")).toBe(100)
+  })
+
+  it("rounds distance to the metre", () => {
+    expect(parseDistance("5", "metric")).toBe(5000)
+    expect(parseDistance("3.1", "imperial")).toBe(Math.round(parseDistance("3.1", "imperial")!))
+  })
+})
