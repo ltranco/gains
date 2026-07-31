@@ -318,13 +318,24 @@ input[type="number"] {
   animation: toast-in 160ms ease-out;
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 700ms linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sheet-panel,
   .sheet-scrim,
   .rep-lift,
   .bar-flex,
   .ground-pulse,
-  .toast-in {
+  .toast-in,
+  .spin {
     animation: none;
   }
 }

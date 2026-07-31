@@ -10,6 +10,7 @@ import {
   useState,
 } from "react"
 
+import { instantOn } from "@/lib/date"
 import { EMPTY_STATE, newId, readState, STORAGE_KEY, parseState, writeState } from "@/lib/store"
 import type { GainsState, Prefs, SetEntry } from "@/lib/types"
 
@@ -62,7 +63,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const addSet = useCallback((set: Omit<SetEntry, "id" | "loggedAt">) => {
     setState((s) => ({
       ...s,
-      sets: [...s.sets, { ...set, id: newId(), loggedAt: new Date().toISOString() }],
+      sets: [...s.sets, { ...set, id: newId(), loggedAt: instantOn(set.date) }],
     }))
   }, [])
 
@@ -89,7 +90,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!src) return s
       return {
         ...s,
-        sets: [...s.sets, { ...src, id: newId(), loggedAt: new Date().toISOString() }],
+        sets: [...s.sets, { ...src, id: newId(), loggedAt: instantOn(src.date) }],
       }
     })
   }, [])

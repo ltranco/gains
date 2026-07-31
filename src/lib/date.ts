@@ -47,6 +47,21 @@ export function isFuture(key: string): boolean {
 }
 
 /**
+ * An instant on `dayKey` at the current time of day.
+ *
+ * `loggedAt` used to be plain `new Date()`, which is wrong the moment you log against a past
+ * day: the set filed under yesterday, but the metric sample it produces is stamped now, so it
+ * lands on today in any chart. Same wall-clock time, correct calendar day — and for today this
+ * is just now.
+ */
+export function instantOn(dayKey: string): string {
+  const now = new Date()
+  const d = fromDayKey(dayKey)
+  d.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds())
+  return d.toISOString()
+}
+
+/**
  * `2026-07-31 14:32` — always 24-hour, never am/pm.
  *
  * Not `toLocaleString()`, which picks 12- or 24-hour from the browser locale and lands on

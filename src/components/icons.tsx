@@ -106,3 +106,23 @@ export const Check = (p: IconProps) => (
     <path d="M20 6L9 17l-5-5" />
   </Svg>
 )
+
+/** Spins via the `.spin` class in globals.css, which respects prefers-reduced-motion. */
+export const Spinner = ({ size = 16, className }: IconProps) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+    className={`spin ${className ?? ""}`}
+  >
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+    <path
+      d="M21 12a9 9 0 00-9-9"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    />
+  </svg>
+)

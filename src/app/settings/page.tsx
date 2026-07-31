@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { SubPageBar } from "@/components/TopBar"
-import { Check } from "@/components/icons"
+import { Check, Close, Spinner } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { formatStamp, todayKey } from "@/lib/date"
 import { applyPull, planPush, pullSets, pushSets, resetPushState } from "@/lib/remote"
@@ -218,18 +218,18 @@ function Swatch({
 
 /**
  * The storage layer. gains is a client — it logs, draws and pushes; the data lives wherever
- * you point it. Anything honouring the contract works; metrics.ltran.co is just one instance.
+ * you point it. Anything honouring the contract works, so the placeholders name no host.
  *
- * The remote is append-only, so this UI has to be honest about what can't propagate: a set
- * you edited or deleted after pushing stays as it was remotely. We deliberately don't re-send
- * changed sets — a partial application, weight rising while reps fall, would be worse than a
- * stale one.
+ * The remote is append-only, so this has to be honest about what can't propagate: a set you
+ * edited or deleted after pushing stays as it was remotely. We deliberately don't re-send
+ * changed sets — a partial application, weight rising while reps fall, is worse than a stale
+ * one.
  */
 function StorageSection() {
   const { state, replaceAll } = useStore()
   const [config, setConfig] = useState<RemoteConfig>(EMPTY_REMOTE)
-  const [busy, setBusy] = useState<"push" | "pull" | null>(null)
-  const [status, setStatus] = useState<{ text: string; bad?: boolean } | null>(null)
+  const [push, setPush] = useState<ActionState>({ kind: "idle" })
+  const [pull, setPull] = useState<ActionState>({ kind: "idle" })
 
   useEffect(() => setConfig(readRemote()), [])
 
@@ -241,38 +241,28 @@ function StorageSection() {
   const plan = useMemo(() => planPush(config, state.sets), [config, state.sets])
 
   const doPush = async () => {
-    setBusy("push")
-    setStatus(null)
+    setPush({ kind: "busy" })
     const res = await pushSets(config, state.sets)
-    setBusy(null)
-    if (!res.ok) return setStatus({ text: res.error, bad: true })
+    if (!res.ok) return setPush({ kind: "error", message: res.error })
     save(res.value.config)
-    setStatus({
-      text:
-        res.value.fresh.length === 0
-          ? "Nothing new to push."
-          : `Pushed ${res.value.fresh.length} ${res.value.fresh.length === 1 ? "set" : "sets"} (${res.value.written} samples).`,
-    })
+    setPush({ kind: "ok" })
   }
 
   const doPull = async () => {
-    setBusy("pull")
-    setStatus(null)
+    setPull({ kind: "busy" })
     const res = await pullSets(config)
-    setBusy(null)
-    if (!res.ok) return setStatus({ text: res.error, bad: true })
+    if (!res.ok) return setPull({ kind: "error", message: res.error })
     replaceAll(applyPull(state, res.value.sets))
     save(res.value.config)
-    const unknown = res.value.unknownPrefixes.length
-    setStatus({
-      text:
-        `Pulled ${res.value.sets.length} sets, replacing local.` +
-        (unknown ? ` ${unknown} unrecognised exercise${unknown === 1 ? "" : "s"} skipped.` : ""),
-    })
+    setPull({ kind: "ok" })
   }
 
   const canPush = config.url.trim().length > 0
   const canPull = (config.readUrl ?? "").trim().length > 0
+  const error = push.kind === "error" ? push.message : pull.kind === "error" ? pull.message : null
+
+  const pending = plan.fresh.length
+  const stale = plan.changed.length + plan.deletedIds.length
 
   return (
     <Section label="Storage">
@@ -281,14 +271,14 @@ function StorageSection() {
           label="Push to"
           value={config.url}
           onChange={(url) => save({ ...config, url })}
-          placeholder="https://metrics.ltran.co/ingest"
+          placeholder="https://<host>/ingest"
           type="url"
         />
         <Field
           label="Read from"
           value={config.readUrl ?? ""}
           onChange={(readUrl) => save({ ...config, readUrl })}
-          placeholder="https://metrics.ltran.co/api/v1/export"
+          placeholder="https://<host>/api/v1/export"
           type="url"
         />
         <Field
@@ -301,44 +291,90 @@ function StorageSection() {
       </div>
 
       <div className="mt-2.5 flex flex-wrap gap-2">
-        <Button onClick={doPush} disabled={!canPush || busy !== null}>
-          {busy === "push" ? "Pushing…" : "Push"}
-        </Button>
-        <Button onClick={doPull} disabled={!canPull || busy !== null}>
-          {busy === "pull" ? "Pulling…" : "Pull"}
-        </Button>
-        <Button onClick={() => save(resetPushState(config))} disabled={busy !== null}>
-          Re-send all
-        </Button>
+        <ActionButton label="Push" state={push} onClick={doPush} disabled={!canPush} />
+        <ActionButton
+          label="Pull"
+          state={pull}
+          onClick={doPull}
+          disabled={!canPull}
+          title={canPull ? undefined : "Needs a read endpoint"}
+        />
+        <Button onClick={() => save(resetPushState(config))}>Re-send all</Button>
       </div>
 
-      {!canPull && (
-        <Status>Add a read endpoint to enable Pull.</Status>
+      {/* Only speak up when something is actually out of step — plus the sync time, which is
+          a fact rather than a hint, and the reason the 24-hour format matters. */}
+      {config.lastSyncedAt && (
+        <p className="nums-quiet mt-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
+          Synced {formatStamp(config.lastSyncedAt)}
+        </p>
       )}
 
-      {status ? (
-        <Status bad={status.bad}>{status.text}</Status>
-      ) : (
+      {error && <Status bad>{error}</Status>}
+
+      {!error && pending > 0 && (
         <Status>
-          {plan.fresh.length === 0
-            ? "Everything logged has been pushed."
-            : `${plan.fresh.length} ${plan.fresh.length === 1 ? "set" : "sets"} pending (${plan.sampleCount} samples).`}
-          {config.lastSyncedAt && ` Last synced ${formatStamp(config.lastSyncedAt)}.`}
+          {pending} {pending === 1 ? "set" : "sets"} to push.
         </Status>
       )}
 
-      {(plan.changed.length > 0 || plan.deletedIds.length > 0) && (
-        <p className="mt-2 text-[13px]" style={{ color: "var(--danger)" }}>
+      {!error && stale > 0 && (
+        <Status bad>
           {[
             plan.changed.length > 0 && `${plan.changed.length} edited`,
             plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
           ]
             .filter(Boolean)
             .join(", ")}{" "}
-          after pushing. The store only appends, so those stay as first sent.
-        </p>
+          after pushing — the store only appends, so those stay as first sent.
+        </Status>
       )}
     </Section>
+  )
+}
+
+type ActionState =
+  | { kind: "idle" }
+  | { kind: "busy" }
+  | { kind: "ok" }
+  | { kind: "error"; message: string }
+
+/**
+ * A button that reports its own outcome inline, rather than pushing a sentence into the page.
+ * The result sticks until the next attempt — a tick that fades after two seconds is a tick you
+ * miss when you look away.
+ */
+function ActionButton({
+  label,
+  state,
+  onClick,
+  disabled,
+  title,
+}: {
+  label: string
+  state: ActionState
+  onClick: () => void
+  disabled?: boolean
+  title?: string
+}) {
+  const tone =
+    state.kind === "ok" ? "#1f9d55" : state.kind === "error" ? "var(--danger)" : undefined
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || state.kind === "busy"}
+      title={title}
+      aria-busy={state.kind === "busy"}
+      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)] disabled:pointer-events-none disabled:opacity-40"
+      style={{ borderColor: tone ?? "var(--border-strong)", color: tone }}
+    >
+      {label}
+      {state.kind === "busy" && <Spinner size={13} />}
+      {state.kind === "ok" && <Check size={14} />}
+      {state.kind === "error" && <Close size={14} />}
+    </button>
   )
 }
 
