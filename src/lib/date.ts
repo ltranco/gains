@@ -62,6 +62,35 @@ export function instantOn(dayKey: string): string {
 }
 
 /**
+ * `2026-07-31T14:32` — what `<input type="datetime-local">` expects, in local time.
+ *
+ * Not `toISOString().slice(0,16)`, which is UTC and would show a 9pm set as the next morning.
+ */
+export function dateTimeLocalValue(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  const p = (n: number) => n.toString().padStart(2, "0")
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}`
+  )
+}
+
+/**
+ * A `datetime-local` value back to an instant, read in local time.
+ *
+ * Pure parsing: whether the result is allowed — not in the future, say — belongs to whoever
+ * asked, not to the parser. Mixing the rule in here makes it untestable at any date but today.
+ */
+export function parseDateTimeLocal(value: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(value.trim())
+  if (!m) return null
+  const [, y, mo, da, h, mi] = m
+  const d = new Date(Number(y), Number(mo) - 1, Number(da), Number(h), Number(mi), 0, 0)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
  * `2026-07-31 14:32:58` — always 24-hour, never am/pm, seconds included.
  *
  * Not `toLocaleString()`, which picks 12- or 24-hour from the browser locale and lands on

@@ -164,22 +164,25 @@ export function TextField({
 }
 
 /**
- * A real `<input type="time">`, not a text box.
+ * A real `<input type="datetime-local">`, not a text box.
  *
- * The platform picker is better than anything worth hand-rolling here: iOS gives its wheel,
- * desktop gives a spinner, and both understand the locale. The value it hands back is always
- * `HH:mm` in 24-hour form regardless of how it chooses to display it, so nothing downstream
- * has to parse a locale.
+ * Day and time together, because moving a set to the right day is the same correction as
+ * moving it to the right minute. The platform picker beats anything worth hand-rolling: iOS
+ * gives its wheel, desktop a calendar and spinner, and the value comes back as
+ * `YYYY-MM-DDTHH:mm` in local time whatever the locale displays.
  */
-export function TimeField({
+export function DateTimeField({
   label,
   hint,
   value,
+  max,
   onChange,
 }: {
   label: string
   hint?: string
   value: string
+  /** Upper bound, same shape as `value`. A set cannot have happened in the future. */
+  max?: string
   onChange: (next: string) => void
 }) {
   const id = useId()
@@ -197,8 +200,9 @@ export function TimeField({
       </div>
       <input
         id={id}
-        type="time"
+        type="datetime-local"
         value={value}
+        max={max}
         onChange={(e) => onChange(e.target.value)}
         step={60}
         className="nums w-full rounded-lg border py-2.5 text-center text-[17px] font-medium outline-none focus:border-[var(--accent)]"

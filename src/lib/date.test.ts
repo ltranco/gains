@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  dateTimeLocalValue,
   formatStamp,
   formatTime,
   fromDayKey,
   instantOn,
+  parseDateTimeLocal,
   rfc3339Local,
   shiftDay,
   toDayKey,
@@ -116,5 +118,32 @@ describe("formatTime", () => {
   it("returns null for a set with no usable timestamp", () => {
     expect(formatTime(undefined, "24h")).toBeNull()
     expect(formatTime("nonsense", "24h")).toBeNull()
+  })
+})
+
+describe("datetime-local round trip", () => {
+  it("renders and parses in local time, not UTC", () => {
+    // A 21:00 Pacific set is already tomorrow in UTC; slicing an ISO string would show the
+    // wrong day in the picker and silently move the set when saved.
+    const d = new Date(2026, 6, 31, 21, 0)
+    const v = dateTimeLocalValue(d.toISOString())
+    expect(v).toBe("2026-07-31T21:00")
+    expect(parseDateTimeLocal(v)?.getTime()).toBe(d.getTime())
+  })
+
+  it("round-trips across both DST transitions", () => {
+    for (const [y, m, day] of [
+      [2026, 2, 8], // spring forward
+      [2025, 10, 2], // fall back
+    ] as const) {
+      const d = new Date(y, m, day, 13, 45)
+      expect(parseDateTimeLocal(dateTimeLocalValue(d.toISOString()))?.getTime()).toBe(d.getTime())
+    }
+  })
+
+  it("tolerates a seconds field and rejects junk", () => {
+    expect(parseDateTimeLocal("2026-07-31T09:14:03")).not.toBeNull()
+    expect(parseDateTimeLocal("nonsense")).toBeNull()
+    expect(parseDateTimeLocal("")).toBeNull()
   })
 })
