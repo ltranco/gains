@@ -879,17 +879,25 @@ export function search(query: string): Exercise[] {
     .map((s) => s.exercise)
 }
 
-/** Roughly how likely you meant this implement, when the score can't tell them apart. */
+/**
+ * Roughly how likely you meant this implement, when the text score can't separate two
+ * variants of the same movement.
+ *
+ * `bodyweight` sits mid-table rather than first. It isn't an implement competing with barbell
+ * and dumbbell for the same movement: where a bodyweight version exists it's usually the only
+ * version (Push Up, Plank), so its rank rarely decides anything useful. Ranking it top just
+ * biased every search toward bodyweight entries, which is how "curl" came back Nordic Curl.
+ */
 const EQUIPMENT_RANK: Record<Equipment, number> = {
-  bodyweight: 0,
-  barbell: 1,
-  dumbbell: 2,
-  cable: 3,
-  machine: 4,
-  ez_bar: 5,
-  smith: 6,
-  kettlebell: 7,
-  t_bar: 8,
-  trap_bar: 9,
-  band: 10,
+  barbell: 0,
+  dumbbell: 1,
+  cable: 2,
+  machine: 3,
+  bodyweight: 3,
+  ez_bar: 4,
+  smith: 5,
+  kettlebell: 5,
+  t_bar: 6,
+  trap_bar: 6,
+  band: 7,
 }

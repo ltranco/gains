@@ -181,11 +181,38 @@ Verified against real VictoriaMetrics on the production flags, the real shim fro
 4. **`next dev` started as a tracked background task gets SIGTERMed at turn end.** Launch it
    with `nohup ... & disown` if it needs to outlive the turn.
 
+## Tests
+
+```bash
+yarn test          # vitest, TZ pinned to America/Los_Angeles
+yarn test:watch
+```
+
+79 assertions in `src/lib/*.test.ts`, and they are not decorative: **every one covers a bug
+that actually shipped during this project.** Before adding a behaviour, check whether a test
+would have caught the last thing that broke in that file.
+
+| File | Guards against |
+| --- | --- |
+| `date.test.ts` | UTC day drift, `loggedAt` ignoring the selected day, DST either side, 24-hour stamps |
+| `units.test.ts` | imperial display corrupting stored kg, comma grouping breaking re-parse |
+| `catalog.test.ts` | duplicate metric prefixes, kind misclassification, fuzzy ranking |
+| `samples.test.ts` | wrong measures per kind, colliding timestamps, `health_weight` being mistaken for ours, round trip through export |
+| `store.test.ts` | a config field saved but not parsed back (this is what silently emptied "Read from") |
+| `select.test.ts` | personal records, day grouping, push planning and its idempotence |
+
+**The TZ is pinned** in the npm script. Several date tests are meaningless at UTC, and CI
+would otherwise disagree with your laptop.
+
+CI runs typecheck, tests and build on every push to `main` and every PR. Vercel builds
+independently, so a red CI does not block a deploy; treat it as the signal, not a gate.
+
 ## Local development
 
 ```bash
 yarn dev -p 3010     # 3000 is usually taken on this host
 yarn typecheck
+yarn test
 yarn build
 ```
 
