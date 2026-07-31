@@ -6,9 +6,10 @@ import { SubPageBar } from "@/components/TopBar"
 import { Check, Close, Spinner } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { formatStamp, todayKey } from "@/lib/date"
-import { applyPull, planPush, pullSets, pushSets, resetPushState } from "@/lib/remote"
-import { EMPTY_REMOTE, parseState, readRemote, writeRemote } from "@/lib/store"
-import type { ClockFormat, RemoteConfig, ThemeChoice, UnitSystem } from "@/lib/types"
+import { applyPull, planPush, pullSets, pushSets } from "@/lib/remote"
+import { parseState } from "@/lib/store"
+import type { ClockFormat, ThemeChoice, UnitSystem } from "@/lib/types"
+import { useRemote } from "@/providers/RemoteProvider"
 import { useStore } from "@/providers/StoreProvider"
 
 export default function Settings() {
@@ -227,17 +228,10 @@ function Swatch({
  */
 function StorageSection() {
   const { state, replaceAll } = useStore()
-  const [config, setConfig] = useState<RemoteConfig>(EMPTY_REMOTE)
+  const { config, setConfig, autoBusy, autoError } = useRemote()
   const [push, setPush] = useState<ActionState>({ kind: "idle" })
   const [pull, setPull] = useState<ActionState>({ kind: "idle" })
   const [armed, setArmed] = useState(false)
-
-  useEffect(() => setConfig(readRemote()), [])
-
-  const save = (next: RemoteConfig) => {
-    setConfig(next)
-    writeRemote(next)
-  }
 
   const plan = useMemo(() => planPush(config, state.sets), [config, state.sets])
 
@@ -245,7 +239,7 @@ function StorageSection() {
     setPush({ kind: "busy" })
     const res = await pushSets(config, state.sets)
     if (!res.ok) return setPush({ kind: "error", message: res.error })
-    save(res.value.config)
+    setConfig(res.value.config)
     setPush({ kind: "ok" })
   }
 
@@ -254,13 +248,14 @@ function StorageSection() {
     const res = await pullSets(config)
     if (!res.ok) return setPull({ kind: "error", message: res.error })
     replaceAll(applyPull(state, res.value.sets))
-    save(res.value.config)
+    setConfig(res.value.config)
     setPull({ kind: "ok" })
   }
 
   const canPush = config.url.trim().length > 0
   const canPull = (config.readUrl ?? "").trim().length > 0
-  const error = push.kind === "error" ? push.message : pull.kind === "error" ? pull.message : null
+  const error =
+    push.kind === "error" ? push.message : pull.kind === "error" ? pull.message : autoError
 
   const pending = plan.fresh.length
   const stale = plan.changed.length + plan.deletedIds.length
@@ -271,30 +266,49 @@ function StorageSection() {
         <Field
           label="Push to"
           value={config.url}
-          onChange={(url) => save({ ...config, url })}
+          onChange={(url) => setConfig({ ...config, url })}
           placeholder="https://<host>/ingest"
           type="url"
         />
         <Field
           label="Read from"
           value={config.readUrl ?? ""}
-          onChange={(readUrl) => save({ ...config, readUrl })}
+          onChange={(readUrl) => setConfig({ ...config, readUrl })}
           placeholder="https://<host>/api/v1/export"
           type="url"
         />
         <Field
           label="Token"
           value={config.token}
-          onChange={(token) => save({ ...config, token })}
+          onChange={(token) => setConfig({ ...config, token })}
           placeholder="Bearer token, used both ways"
           type="password"
+        />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+          Auto push
+          {autoBusy && (
+            <span className="ml-1.5 inline-block align-[-2px]">
+              <Spinner size={12} />
+            </span>
+          )}
+        </span>
+        <Segmented<"off" | "on">
+          value={config.autoPush ? "on" : "off"}
+          options={[
+            ["off", "Off"],
+            ["on", "Every minute"],
+          ]}
+          onChange={(v) => setConfig({ ...config, autoPush: v === "on" })}
         />
       </div>
 
       {/* Pull replaces everything logged here, so it asks first. Inline rather than a dialog —
           it's one decision, and a sheet for a yes/no is heavier than the question. */}
       {armed ? (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
             Replace everything logged here?
           </span>
@@ -312,7 +326,7 @@ function StorageSection() {
           <Button onClick={() => setArmed(false)}>Cancel</Button>
         </div>
       ) : (
-        <div className="mt-2.5 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <ActionButton label="Push" state={push} onClick={doPush} disabled={!canPush} />
           <ActionButton
             label="Pull"
@@ -321,12 +335,9 @@ function StorageSection() {
             disabled={!canPull}
             title={canPull ? undefined : "Needs a read endpoint"}
           />
-          <Button onClick={() => save(resetPushState(config))}>Re-send all</Button>
         </div>
       )}
 
-      {/* Only speak up when something is actually out of step — plus the sync time, which is
-          a fact rather than a hint, and the reason the 24-hour format matters. */}
       {config.lastSyncedAt && (
         <p className="nums-quiet mt-2 text-[12px]" style={{ color: "var(--text-faint)" }}>
           Synced {formatStamp(config.lastSyncedAt)}

@@ -89,6 +89,7 @@ export function readRemote(): RemoteConfig {
       url: typeof c.url === "string" ? c.url : "",
       readUrl: typeof c.readUrl === "string" ? c.readUrl : "",
       token: typeof c.token === "string" ? c.token : "",
+      autoPush: c.autoPush === true,
       ...(typeof c.lastSyncedAt === "string" ? { lastSyncedAt: c.lastSyncedAt } : {}),
       pushed: typeof c.pushed === "object" && c.pushed !== null ? c.pushed : {},
     }

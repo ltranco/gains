@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 
+import { RemoteProvider } from "@/providers/RemoteProvider"
 import { StoreProvider } from "@/providers/StoreProvider"
 import { ThemeSync, themeBootstrapScript } from "@/providers/ThemeSync"
 import "./globals.css"
@@ -55,7 +56,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <StoreProvider>
           <ThemeSync />
-          {children}
+          {/* Inside StoreProvider: the auto-push timer needs the logged sets. */}
+          <RemoteProvider>{children}</RemoteProvider>
         </StoreProvider>
       </body>
     </html>

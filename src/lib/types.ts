@@ -86,6 +86,8 @@ export interface RemoteConfig {
   readUrl?: string
   /** One bearer token, used for both directions. */
   token: string
+  /** Push anything new once a minute, without being asked. */
+  autoPush?: boolean
   lastSyncedAt?: string
   /**
    * Set id -> fingerprint of what was last sent. Lets a push skip sets already stored, and
