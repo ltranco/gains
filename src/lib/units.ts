@@ -45,19 +45,15 @@ export function weightValue(kg: number, u: UnitSystem): string {
 }
 
 /**
- * Renders load for a `weight_reps` set. Bodyweight movements store 0, which reads as "BW",
- * and any added load reads as "+15 kg" — so a belt is visibly distinct from an empty bar
- * rather than both showing as a bare number.
+ * Renders load for a `weight_reps` set.
+ *
+ * There is no bodyweight special case. A pull up records the weight that actually moved —
+ * your bodyweight, plus a belt if you wore one — the same as any other loaded movement.
+ * Storing 0 and printing "BW" made every bodyweight set contribute nothing to volume, which
+ * is wrong at the point it matters most: the derived metrics.
  */
-export function formatLoad(
-  kg: number | undefined,
-  u: UnitSystem,
-  bodyweight: boolean,
-): string {
+export function formatLoad(kg: number | undefined, u: UnitSystem): string {
   if (kg === undefined) return "—"
-  if (bodyweight) {
-    return kg === 0 ? "BW" : `+${weightValue(kg, u)} ${weightUnit(u)}`
-  }
   return `${weightValue(kg, u)} ${weightUnit(u)}`
 }
 

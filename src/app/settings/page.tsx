@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { SubPageBar } from "@/components/TopBar"
 import { Check } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { todayKey } from "@/lib/date"
-import { loadRemote, saveRemote } from "@/lib/remote"
+import { buildPush, pushMetrics, resetPushState } from "@/lib/remote"
 import { EMPTY_REMOTE, parseState, readRemote, writeRemote } from "@/lib/store"
 import type { ClockFormat, RemoteConfig, ThemeChoice, UnitSystem } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
@@ -78,7 +78,7 @@ export default function Settings() {
           />
         </Section>
 
-        <RemoteSection />
+        <MetricsSection />
 
         <Section label="File">
           <div className="flex gap-2">
@@ -217,94 +217,93 @@ function Swatch({
 }
 
 /**
- * The remote read/write target. Not auth and not a one-way export — the same URL is both
- * where the log goes and where it comes back from, so a new browser can be brought up to
- * date by pointing it here and pressing Load.
+ * The metrics endpoint. Not auth, and not a backup — this is a one-way derived feed. Daily
+ * totals cannot be turned back into sets, so the JSON export below remains the only way to
+ * recover the log itself.
+ *
+ * Any host honouring the shim's ingest contract works; metrics.ltran.co is just the default.
  */
-function RemoteSection() {
-  const { state, replaceAll } = useStore()
+function MetricsSection() {
+  const { state } = useStore()
   const [config, setConfig] = useState<RemoteConfig>(EMPTY_REMOTE)
-  const [busy, setBusy] = useState<"load" | "save" | null>(null)
+  const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ text: string; bad?: boolean } | null>(null)
 
   // Kept out of GainsState, so it loads separately from the log document.
   useEffect(() => setConfig(readRemote()), [])
 
-  const patch = (p: Partial<RemoteConfig>) => {
-    const next = { ...config, ...p }
+  const save = (next: RemoteConfig) => {
     setConfig(next)
     writeRemote(next)
   }
 
-  const stamp = () => {
-    const at = new Date().toISOString()
-    const next = { ...config, lastSyncedAt: at }
-    setConfig(next)
-    writeRemote(next)
-  }
+  const pending = useMemo(
+    () => buildPush(config, state.sets).outcome,
+    [config, state.sets],
+  )
 
-  const doSave = async () => {
-    setBusy("save")
+  const push = async () => {
+    setBusy(true)
     setStatus(null)
-    const res = await saveRemote(config, state)
-    setBusy(null)
+    const res = await pushMetrics(config, state.sets)
+    setBusy(false)
     if (!res.ok) {
       setStatus({ text: res.error, bad: true })
       return
     }
-    stamp()
-    setStatus({ text: `Pushed ${state.sets.length} sets.` })
-  }
-
-  const doLoad = async () => {
-    setBusy("load")
-    setStatus(null)
-    const res = await loadRemote(config)
-    setBusy(null)
-    if (!res.ok) {
-      setStatus({ text: res.error, bad: true })
-      return
-    }
-    // Keep local prefs: theme and units are per-device, not per-log.
-    replaceAll({ ...res.value, prefs: state.prefs })
-    stamp()
-    setStatus({ text: `Pulled ${res.value.sets.length} sets.` })
+    save(res.value.config)
+    setStatus({
+      text:
+        res.value.days.length === 0
+          ? "Already up to date."
+          : `Pushed ${res.value.samples} samples across ${res.value.days.length} ${
+              res.value.days.length === 1 ? "day" : "days"
+            }.`,
+    })
   }
 
   const ready = config.url.trim().length > 0
 
   return (
-    <Section label="Sync">
+    <Section label="Metrics">
       <div className="flex flex-col gap-2">
         <Field
-          label="URL"
+          label="Endpoint"
           value={config.url}
-          onChange={(url) => patch({ url })}
-          placeholder="https://example.com/gains.json"
+          onChange={(url) => save({ ...config, url })}
+          placeholder="https://metrics.ltran.co/ingest"
           type="url"
         />
         <Field
           label="Token"
           value={config.token}
-          onChange={(token) => patch({ token })}
-          placeholder="Sent as Authorization: Bearer …"
+          onChange={(token) => save({ ...config, token })}
+          placeholder="Bearer token"
           type="password"
         />
       </div>
 
-      <div className="mt-2.5 flex gap-2">
-        <Button onClick={doSave} disabled={!ready || busy !== null}>
-          {busy === "save" ? "Pushing…" : "Push to remote"}
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <Button onClick={push} disabled={!ready || busy}>
+          {busy ? "Pushing…" : "Push"}
         </Button>
-        <Button onClick={doLoad} disabled={!ready || busy !== null}>
-          {busy === "load" ? "Pulling…" : "Pull from remote"}
+        <Button onClick={() => save(resetPushState(config))} disabled={busy}>
+          Re-send all
         </Button>
       </div>
 
-      {status && <Status bad={status.bad}>{status.text}</Status>}
-
-      {config.lastSyncedAt && !status && (
-        <Status>Last synced {new Date(config.lastSyncedAt).toLocaleString()}.</Status>
+      {status ? (
+        <Status bad={status.bad}>{status.text}</Status>
+      ) : (
+        <Status>
+          {pending.days.length === 0
+            ? "Nothing to push."
+            : `${pending.samples} samples across ${pending.days.length} ${
+                pending.days.length === 1 ? "day" : "days"
+              } pending.`}
+          {config.lastSyncedAt &&
+            ` Last pushed ${new Date(config.lastSyncedAt).toLocaleString()}.`}
+        </Status>
       )}
     </Section>
   )

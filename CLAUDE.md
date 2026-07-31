@@ -62,9 +62,14 @@ Node 20.
    crunch is `weight_reps`. Same movement, different measurement.
 
 4. **Pull Up, Chin Up, Dip and Inverted Row are `weight_reps`, not `reps`.** You can hang a
-   belt off yourself, so bodyweight is `weightKg: 0` on the same continuous scale as +20kg.
-   The UI renders 0 as `BW` and anything else as `+15 kg`. Push Up genuinely is `reps` —
-   nobody logs a weighted push up, and the extra field would be noise on every entry.
+   belt off yourself, so they're loaded movements. Push Up genuinely is `reps` — nobody logs
+   a weighted push up, and the extra field would be noise on every entry.
+
+   **`weightKg` is the real load that moved, always.** A pull up records bodyweight (plus a
+   belt if worn), entered by hand — there is no "BW" sentinel and no zero default. An earlier
+   version stored 0 and rendered `BW`; that made every bodyweight set contribute nothing to
+   derived volume, which is wrong exactly where it matters. Blank weight is an error, never a
+   silent 0.
 
 5. **Day keys are local, built by hand.** `toDayKey()` never goes through `toISOString()`,
    which converts to UTC first and would file a 9pm Pacific set under tomorrow.
@@ -83,23 +88,60 @@ Node 20.
    each other down a column, so they get tabular figures and a flatter, heavier face than
    Inter's.
 
-## Remote state
+## Metrics push
 
-Settings takes a URL and a token. `GET` returns the document, `PUT` overwrites it:
+Settings takes an endpoint and a token. gains derives **per-exercise daily scalars** and posts
+them in the metrics shim's ingest format (see `~/dev/metrics`):
 
 ```
-GET  <url>  →  { version: 1, sets: [...], prefs: {...} }
-PUT  <url>  ←  { version: 1, sets: [...], prefs: {...} }
-               Authorization: Bearer <token>
+POST <url>   Authorization: Bearer <token>
+{ "barbell_squat_volume": { "2026-07-31T00:00:00.000-07:00": 1000 },
+  "barbell_squat_sets":   { "2026-07-31T00:00:00.000-07:00": 2 } }
 ```
 
-Both go through `/api/remote`, so the endpoint doesn't need CORS headers.
+The host is configuration — anything honouring that contract works; `metrics.ltran.co/ingest`
+is only the default placeholder. It goes through `/api/remote` so the endpoint needn't serve
+CORS headers.
 
-**Last write wins, no merge.** Merging requires a rule for "both sides edited the same set",
-and inventing one silently is how a log stops matching what actually happened.
+Measures, by exercise kind — `volume` (Σ kg × reps), `sets`, `reps`, `seconds`, `metres`.
+Metric prefix is `slug(displayName(exercise))`, verified collision-free across all 173 entries.
+**The shim prepends its measurement name**, so what lands in VictoriaMetrics is
+`health_barbell_squat_volume`.
 
-The remote config is stored under **its own** localStorage key, not inside `GainsState` — that
-document gets exported and pushed, and a bearer token has no business travelling inside it.
+**This is a one-way derived feed, not a backup.** Daily totals cannot be turned back into sets.
+JSON export is the only route to recovering the log.
+
+Config lives under **its own** localStorage key, not inside `GainsState` — that document gets
+exported, and a bearer token has no business travelling inside it.
+
+### Why timestamps carry a millisecond offset
+
+All of this was verified against real VictoriaMetrics with the production flags and the real
+shim built from `~/dev/metrics/shim`. Don't take it on faith; don't undo it either.
+
+1. **A re-post at the same timestamp cannot correct a value downward.**
+   `-dedup.minScrapeInterval=1ms` keeps the **biggest** value on a tie. Posting 5400 → 4000 →
+   9999 leaves exactly one sample: 9999. Delete a set, re-post the smaller total, and the old
+   larger number is what the dashboard shows forever — `admin/tsdb/delete_series` isn't
+   reachable through nginx, so it needs SSH.
+
+2. **So each revision of a day lands one millisecond later**, and `last_over_time` returns the
+   newest. `rollupTimestamp(day, rev)` does this; `rev` is tracked per day in the remote config.
+
+3. **The timestamp must be RFC3339, never epoch millis.** The shim's `toNanos` does
+   `int64(float64 * 1e9)`, and at 1.78e18 the mantissa can't hold nanoseconds: key
+   `…200001` becomes `…000999936ns`, drops into the *previous* millisecond bucket, and dedup
+   discards it as a tie. This silently ate a correction mid-test. `time.ParseInLocation` on an
+   RFC3339 string is exact integer arithmetic.
+
+4. **Never query these with `sum_over_time`.** Multiple samples per day means it counts every
+   revision — a corrected day summed to 6600 when the true value was 1200. Use
+   `last_over_time(metric[1h])`, and `sum(last_over_time({__name__=~"health_.*_volume"}[1h]))`
+   to aggregate across exercises. Note that the existing steps-to-goal stat in the metrics repo
+   *does* use `sum_over_time`; gains metrics must not inherit that pattern.
+
+5. **Push only days whose fingerprint changed.** Otherwise every push appends a sample to every
+   day ever logged, bloating the series and compounding trap 4.
 
 ## Traps
 

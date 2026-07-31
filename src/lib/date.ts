@@ -47,6 +47,42 @@ export function isFuture(key: string): boolean {
 }
 
 /**
+ * `YYYY-MM-DDTHH:mm:ss.sss±HH:MM` — RFC3339 with a real local offset and milliseconds.
+ *
+ * This exact format matters. The metrics shim parses timestamp keys three ways, and the
+ * epoch-millis path runs them through `int64(float64 * 1e9)`, which at 1.78e18 can't hold
+ * nanoseconds: a `+1ms` key lands at `…000999936ns` and falls back into the previous
+ * millisecond, where VictoriaMetrics' 1ms dedup discards it as a tie. RFC3339 goes through
+ * `time.ParseInLocation` instead — exact integer arithmetic, no float, no lost revisions.
+ */
+export function rfc3339Local(d: Date): string {
+  const p = (n: number, w = 2) => Math.abs(n).toString().padStart(w, "0")
+  const offsetMin = -d.getTimezoneOffset()
+  const sign = offsetMin >= 0 ? "+" : "-"
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` +
+    `.${p(d.getMilliseconds(), 3)}` +
+    `${sign}${p(Math.floor(Math.abs(offsetMin) / 60))}:${p(Math.abs(offsetMin) % 60)}`
+  )
+}
+
+/**
+ * Timestamp for a day's rollup: local midnight plus `revision` milliseconds.
+ *
+ * The offset is what makes a correction possible at all. VictoriaMetrics runs with
+ * `-dedup.minScrapeInterval=1ms` and keeps the *biggest* value on a timestamp tie, so
+ * re-posting a day's number after deleting a set leaves the old larger value in place
+ * forever — and the admin delete-series API isn't reachable through nginx. Each revision
+ * therefore lands one millisecond later, and `last_over_time` returns the newest.
+ */
+export function rollupTimestamp(dayKey: string, revision: number): string {
+  const d = fromDayKey(dayKey)
+  d.setMilliseconds(revision)
+  return rfc3339Local(d)
+}
+
+/**
  * `loggedAt` → `14:32` or `2:32 pm`. Built by hand rather than via `toLocaleTimeString`,
  * which decides 12- vs 24-hour from the browser locale and so ignores the preference.
  * Returns null for sets with no usable timestamp — imported data may predate this field.

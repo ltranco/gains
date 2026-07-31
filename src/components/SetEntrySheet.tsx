@@ -10,6 +10,7 @@ import {
   distanceValue,
   formatCount,
   formatDuration,
+  formatLoad,
   parseDistance,
   parseDuration,
   parseReps,
@@ -21,11 +22,6 @@ import { useStore } from "@/providers/StoreProvider"
 import { Sheet } from "./Sheet"
 import { NumberField, TextField } from "./NumberField"
 
-/** Bodyweight movements you can load — pull ups, dips. 0 means bodyweight, not "no data". */
-function isLoadedBodyweight(ex: Exercise): boolean {
-  return ex.kind === "weight_reps" && ex.equipment === "bodyweight"
-}
-
 interface Draft {
   weight: string
   reps: string
@@ -35,8 +31,8 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { weight: "", reps: "", duration: "", distance: "" }
 
-function draftFrom(set: SetEntry | undefined, units: UnitSystem, ex: Exercise): Draft {
-  if (!set) return { ...EMPTY_DRAFT, ...(isLoadedBodyweight(ex) ? { weight: "0" } : {}) }
+function draftFrom(set: SetEntry | undefined, units: UnitSystem): Draft {
+  if (!set) return EMPTY_DRAFT
   return {
     weight: set.weightKg === undefined ? "" : weightValue(set.weightKg, units),
     reps: set.reps === undefined ? "" : String(set.reps),
@@ -75,14 +71,13 @@ export function SetEntrySheet({
 
   useEffect(() => {
     if (!open || !exercise) return
-    setDraft(draftFrom(editing ?? previous, units, exercise))
+    setDraft(draftFrom(editing ?? previous, units))
     setError(null)
   }, [open, exercise, editing, previous, units])
 
   if (!exercise) return null
 
   const kind = exercise.kind
-  const bodyweight = isLoadedBodyweight(exercise)
   const patch = () => buildPatch(draft, exercise, units)
 
   const commit = () => {
@@ -146,14 +141,13 @@ export function SetEntrySheet({
         {kind === "weight_reps" && (
           <>
             <NumberField
-              label={bodyweight ? "Added weight" : "Weight"}
-              hint={bodyweight ? "0 = bodyweight" : undefined}
+              label="Weight"
               value={draft.weight}
               onChange={(weight) => setDraft((d) => ({ ...d, weight }))}
               step={weightStep}
               suffix={weightUnit(units)}
               placeholder="0"
-              autoFocus={!bodyweight}
+              autoFocus
             />
             <NumberField
               label="Reps"
@@ -163,7 +157,6 @@ export function SetEntrySheet({
               min={1}
               inputMode="numeric"
               placeholder="8"
-              autoFocus={bodyweight}
             />
           </>
         )}
@@ -241,13 +234,10 @@ function buildPatch(draft: Draft, ex: Exercise, units: UnitSystem): Built {
     case "weight_reps": {
       const reps = parseReps(draft.reps)
       if (reps === undefined) return { error: "Reps must be a whole number above zero." }
+      // Blank always means you forgot. A pull up carries your bodyweight, so there is no
+      // reading of "no weight entered" that should silently become 0kg.
       const raw = draft.weight.trim()
-      // Blank weight on a loadable bodyweight movement means bodyweight, which is 0. On a
-      // barbell movement it means you forgot, so it's an error rather than a silent 0kg.
-      if (!raw) {
-        if (isLoadedBodyweight(ex)) return { value: { reps, weightKg: 0 } }
-        return { error: "Enter a weight." }
-      }
+      if (!raw) return { error: "Enter a weight." }
       const weightKg = parseWeight(raw, units)
       if (weightKg === undefined) return { error: "Weight must be a positive number." }
       return { value: { reps, weightKg } }
@@ -279,18 +269,8 @@ function buildPatch(draft: Draft, ex: Exercise, units: UnitSystem): Built {
 /** Shared one-line rendering of a set, used by the sheet and the day list. */
 export function summarise(set: SetEntry, ex: Exercise, units: UnitSystem): string {
   switch (ex.kind) {
-    case "weight_reps": {
-      const bw = isLoadedBodyweight(ex)
-      const load =
-        set.weightKg === undefined
-          ? "—"
-          : bw
-            ? set.weightKg === 0
-              ? "BW"
-              : `+${weightValue(set.weightKg, units)} ${weightUnit(units)}`
-            : `${weightValue(set.weightKg, units)} ${weightUnit(units)}`
-      return `${load} × ${formatCount(set.reps)}`
-    }
+    case "weight_reps":
+      return `${formatLoad(set.weightKg, units)} × ${formatCount(set.reps)}`
     case "reps":
       return `${formatCount(set.reps)} reps`
     case "duration":

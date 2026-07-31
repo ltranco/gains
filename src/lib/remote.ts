@@ -1,53 +1,106 @@
-import { parseState } from "./store"
-import type { GainsState, RemoteConfig } from "./types"
+import { rollupTimestamp } from "./date"
+import { dailyMetrics, fingerprint } from "./rollup"
+import type { RemoteConfig, SetEntry } from "./types"
 
 /**
- * Client side of the configurable remote. Both directions go through `/api/remote` so the
- * endpoint you point this at doesn't need CORS headers.
+ * Pushes derived daily metrics to a configured endpoint speaking the metrics-shim contract:
  *
- * Load replaces local state outright and save overwrites the remote outright — last write
- * wins, no merge. Merging needs a rule for "both sides edited the same set", and inventing
- * one silently is how a log quietly stops matching what you did.
+ *   POST <url>   Authorization: Bearer <token>
+ *   { "<metric>": { "<rfc3339 timestamp>": <number> }, … }
+ *
+ * The host is configuration. Anything honouring that contract works.
+ *
+ * It goes through `/api/remote` on our own origin so an arbitrary endpoint doesn't have to
+ * serve CORS headers to be usable — not for secrecy, since the token sits in localStorage.
  */
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
-async function call(
+export interface PushOutcome {
+  /** Days whose metrics differed from the last push and were therefore sent. */
+  days: string[]
+  /** Number of individual metric samples in the payload. */
+  samples: number
+  /** Config with updated per-day hashes and revisions; caller persists it. */
+  config: RemoteConfig
+}
+
+/** Builds the payload for changed days only, and the config update that records the push. */
+export function buildPush(
   config: RemoteConfig,
-  payload?: GainsState,
-): Promise<Result<unknown>> {
+  sets: SetEntry[],
+): { payload: Record<string, Record<string, number>>; outcome: PushOutcome } {
+  const perDay = dailyMetrics(sets)
+  const pushed = { ...(config.pushed ?? {}) }
+
+  const payload: Record<string, Record<string, number>> = {}
+  const days: string[] = []
+  let samples = 0
+
+  for (const [day, metrics] of [...perDay].sort(([a], [b]) => a.localeCompare(b))) {
+    const hash = fingerprint(metrics)
+    const previous = pushed[day]
+    if (previous?.hash === hash) continue
+
+    // First push of a day uses offset 0; every correction after it steps one millisecond so
+    // it can't tie with — and lose to — the sample already stored.
+    const rev = previous ? previous.rev + 1 : 0
+    const stamp = rollupTimestamp(day, rev)
+
+    for (const [metric, value] of Object.entries(metrics)) {
+      payload[metric] ??= {}
+      payload[metric][stamp] = value
+      samples++
+    }
+
+    pushed[day] = { hash, rev }
+    days.push(day)
+  }
+
+  return { payload, outcome: { days, samples, config: { ...config, pushed } } }
+}
+
+export async function pushMetrics(
+  config: RemoteConfig,
+  sets: SetEntry[],
+): Promise<Result<PushOutcome>> {
+  const { payload, outcome } = buildPush(config, sets)
+  if (outcome.days.length === 0) {
+    return { ok: true, value: outcome }
+  }
+
   try {
     const res = await fetch("/api/remote", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        url: config.url,
-        token: config.token,
-        ...(payload !== undefined ? { payload } : {}),
-      }),
+      body: JSON.stringify({ url: config.url, token: config.token, payload }),
     })
-    const data = (await res.json()) as { error?: string; document?: unknown }
-    if (!res.ok) return { ok: false, error: data.error ?? `Request failed (${res.status}).` }
-    return { ok: true, value: data.document }
+    const data = (await res.json()) as { error?: string; written?: number }
+    if (!res.ok) {
+      return { ok: false, error: data.error ?? `Request failed (${res.status}).` }
+    }
+    return {
+      ok: true,
+      value: {
+        ...outcome,
+        config: { ...outcome.config, lastSyncedAt: new Date().toISOString() },
+      },
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Request failed." }
   }
 }
 
-export async function loadRemote(config: RemoteConfig): Promise<Result<GainsState>> {
-  const res = await call(config)
-  if (!res.ok) return res
-  // Reuse the same tolerant parser as localStorage: a remote document gets no more trust
-  // than a local one.
-  const state = parseState(JSON.stringify(res.value ?? {}))
-  return { ok: true, value: state }
-}
-
-export async function saveRemote(
-  config: RemoteConfig,
-  state: GainsState,
-): Promise<Result<null>> {
-  const res = await call(config, state)
-  if (!res.ok) return res
-  return { ok: true, value: null }
+/**
+ * Forgets what was pushed, so the next push re-sends every day.
+ *
+ * Revisions are preserved rather than reset — reusing an offset would tie with a stored
+ * sample, and dedup would keep whichever value was larger instead of the one being re-sent.
+ */
+export function resetPushState(config: RemoteConfig): RemoteConfig {
+  const pushed: Record<string, { hash: string; rev: number }> = {}
+  for (const [day, entry] of Object.entries(config.pushed ?? {})) {
+    pushed[day] = { hash: "", rev: entry.rev }
+  }
+  return { ...config, pushed }
 }

@@ -75,14 +75,20 @@ export interface Prefs {
 }
 
 /**
- * Remote read/write target. Deliberately *not* part of GainsState: that document is what
- * gets exported and pushed to the remote, and a bearer token has no business travelling
- * inside it. Lives under its own storage key.
+ * Where derived metrics get pushed. Deliberately *not* part of GainsState: that document is
+ * what gets exported, and a bearer token has no business travelling inside it. Lives under
+ * its own storage key.
  */
 export interface RemoteConfig {
   url: string
   token: string
   lastSyncedAt?: string
+  /**
+   * Per-day push bookkeeping. `hash` is the fingerprint of what was last sent, so unchanged
+   * days are skipped; `rev` is the millisecond offset the next revision of that day uses, so
+   * a correction lands after its predecessor rather than tying with it and losing to dedup.
+   */
+  pushed?: Record<string, { hash: string; rev: number }>
 }
 
 export interface GainsState {

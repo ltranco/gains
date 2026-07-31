@@ -1,13 +1,16 @@
 import type { NextRequest } from "next/server"
 
 /**
- * Proxy for the user-configured remote store. The browser talks to this route; this route
- * talks to whatever URL you set in Settings.
+ * Proxy to the user-configured metrics endpoint. The browser talks to this route; this route
+ * talks to whatever URL is set in Settings, forwarding the shim's ingest contract verbatim:
  *
- * The point is not secrecy — the token lives in localStorage and anyone holding the device
- * can read it. It's that an arbitrary endpoint of your own shouldn't have to serve CORS
- * headers to be usable here. Going through the origin removes preflight from the picture
- * entirely, so a plain nginx location block or a one-file Go handler works as-is.
+ *   POST <url>   Authorization: Bearer <token>
+ *   { "<metric>": { "<timestamp>": <number> } }
+ *
+ * The point is not secrecy — the token lives in localStorage and anyone holding the device can
+ * read it. It's that an arbitrary endpoint of your own shouldn't have to serve CORS headers to
+ * be usable here. Going through our origin removes preflight from the picture, so a plain
+ * nginx location block or a small Go handler works as-is.
  */
 
 interface Body {
@@ -16,32 +19,24 @@ interface Body {
   payload?: unknown
 }
 
-function targetFrom(body: Body): { url: string; token: string } | { error: string } {
-  const url = typeof body.url === "string" ? body.url.trim() : ""
+function target(body: Body): { url: string; token: string } | { error: string } {
+  const raw = typeof body.url === "string" ? body.url.trim() : ""
   const token = typeof body.token === "string" ? body.token : ""
-  if (!url) return { error: "No remote URL configured." }
+  if (!raw) return { error: "No endpoint configured." }
 
   let parsed: URL
   try {
-    parsed = new URL(url)
+    parsed = new URL(raw)
   } catch {
     return { error: "That doesn't parse as a URL." }
   }
-  // Refuse to be a general-purpose fetcher. http/https only.
+  // Refuse to be a general-purpose fetcher.
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return { error: "Remote URL must be http or https." }
+    return { error: "Endpoint must be http or https." }
   }
   return { url: parsed.toString(), token }
 }
 
-function headersFor(token: string): HeadersInit {
-  return {
-    "content-type": "application/json",
-    ...(token ? { authorization: `Bearer ${token}` } : {}),
-  }
-}
-
-/** Pull the stored document down. */
 export async function POST(req: NextRequest) {
   let body: Body
   try {
@@ -50,36 +45,43 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Bad request body." }, { status: 400 })
   }
 
-  const target = targetFrom(body)
-  if ("error" in target) return Response.json({ error: target.error }, { status: 400 })
+  const to = target(body)
+  if ("error" in to) return Response.json({ error: to.error }, { status: 400 })
 
-  const writing = body.payload !== undefined
+  if (typeof body.payload !== "object" || body.payload === null) {
+    return Response.json({ error: "Nothing to push." }, { status: 400 })
+  }
 
   try {
-    const upstream = await fetch(target.url, {
-      method: writing ? "PUT" : "GET",
-      headers: headersFor(target.token),
-      ...(writing ? { body: JSON.stringify(body.payload) } : {}),
+    const upstream = await fetch(to.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(to.token ? { authorization: `Bearer ${to.token}` } : {}),
+      },
+      body: JSON.stringify(body.payload),
       cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(20_000),
     })
 
     const text = await upstream.text()
     if (!upstream.ok) {
       return Response.json(
-        { error: `Remote replied ${upstream.status}. ${text.slice(0, 200)}`.trim() },
+        { error: `Endpoint replied ${upstream.status}. ${text.slice(0, 200)}`.trim() },
         { status: 502 },
       )
     }
-    if (writing) return Response.json({ ok: true })
 
+    // The shim answers {"written":N}. Pass it through when present — it's the only
+    // confirmation that samples actually landed rather than being silently skipped.
     try {
-      return Response.json({ ok: true, document: JSON.parse(text) })
+      const parsed = JSON.parse(text) as { written?: number }
+      return Response.json({ ok: true, written: parsed.written })
     } catch {
-      return Response.json({ error: "Remote didn't return JSON." }, { status: 502 })
+      return Response.json({ ok: true })
     }
   } catch (e) {
     const reason = e instanceof Error ? e.message : "unknown error"
-    return Response.json({ error: `Couldn't reach the remote: ${reason}` }, { status: 502 })
+    return Response.json({ error: `Couldn't reach the endpoint: ${reason}` }, { status: 502 })
   }
 }
