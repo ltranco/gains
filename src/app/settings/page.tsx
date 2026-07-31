@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { SubPageBar } from "@/components/TopBar"
 import { Check } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
-import { todayKey } from "@/lib/date"
+import { formatStamp, todayKey } from "@/lib/date"
 import { applyPull, planPush, pullSets, pushSets, resetPushState } from "@/lib/remote"
 import { EMPTY_REMOTE, parseState, readRemote, writeRemote } from "@/lib/store"
 import type { ClockFormat, RemoteConfig, ThemeChoice, UnitSystem } from "@/lib/types"
@@ -312,6 +312,10 @@ function StorageSection() {
         </Button>
       </div>
 
+      {!canPull && (
+        <Status>Add a read endpoint to enable Pull.</Status>
+      )}
+
       {status ? (
         <Status bad={status.bad}>{status.text}</Status>
       ) : (
@@ -319,7 +323,7 @@ function StorageSection() {
           {plan.fresh.length === 0
             ? "Everything logged has been pushed."
             : `${plan.fresh.length} ${plan.fresh.length === 1 ? "set" : "sets"} pending (${plan.sampleCount} samples).`}
-          {config.lastSyncedAt && ` Last synced ${new Date(config.lastSyncedAt).toLocaleString()}.`}
+          {config.lastSyncedAt && ` Last synced ${formatStamp(config.lastSyncedAt)}.`}
         </Status>
       )}
 

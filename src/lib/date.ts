@@ -47,6 +47,23 @@ export function isFuture(key: string): boolean {
 }
 
 /**
+ * `2026-07-31 14:32` — always 24-hour, never am/pm.
+ *
+ * Not `toLocaleString()`, which picks 12- or 24-hour from the browser locale and lands on
+ * "7/31/2026, 2:32:58 PM". This is a diagnostic stamp; it's unambiguous or it's useless.
+ */
+export function formatStamp(iso: string | undefined): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  const p = (n: number) => n.toString().padStart(2, "0")
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}`
+  )
+}
+
+/**
  * `YYYY-MM-DDTHH:mm:ss.sss±HH:MM` — RFC3339 with a real local offset and milliseconds.
  *
  * This exact format matters. The metrics shim parses timestamp keys three ways, and the

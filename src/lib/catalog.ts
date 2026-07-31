@@ -1,3 +1,4 @@
+import { fuzzyScoreTerms } from "./fuzzy"
 import {
   EQUIPMENT_LABEL,
   type Equipment,
@@ -357,6 +358,13 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["machine"],
+  },
+  {
+    slug: "kettlebell_swing",
+    movement: "Kettlebell Swing",
+    group: "legs",
+    kind: "weight_reps",
+    variants: [{ eq: "kettlebell", name: "Kettlebell Swing" }],
   },
   {
     slug: "goblet_squat",
@@ -836,14 +844,52 @@ export function movementGroupsIn(group: Group): MovementGroup[] {
   return MOVEMENT_GROUPS.filter((m) => m.group === group)
 }
 
-/** Substring search over movement, equipment label and full display name. */
+/**
+ * Fuzzy search, ranked. Terms may come in any order, so "db curl", "curl db" and "curl
+ * dumbbell" all find Dumbbell Bicep Curl — which plain substring matching could not.
+ *
+ * Scored against the display name first, because that's what you're picturing when you type.
+ * Group and equipment are searched at a discount so "pull" still surfaces the pull group
+ * without letting those fields outrank a real name match.
+ */
 export function search(query: string): Exercise[] {
-  const q = query.trim().toLowerCase()
+  const q = query.trim()
   if (!q) return []
-  return CATALOG.filter((e) => {
-    const haystack = `${displayName(e)} ${e.movement} ${
-      EQUIPMENT_LABEL[e.equipment]
-    } ${e.group}`.toLowerCase()
-    return q.split(/\s+/).every((term) => haystack.includes(term))
-  })
+
+  const scored: { exercise: Exercise; score: number }[] = []
+  for (const e of CATALOG) {
+    const name = displayName(e)
+    const primary = fuzzyScoreTerms(q, name)
+    const secondary = fuzzyScoreTerms(q, `${name} ${e.movement} ${EQUIPMENT_LABEL[e.equipment]} ${e.group}`)
+
+    const base = primary !== null ? primary : secondary !== null ? secondary * 0.4 - 20 : null
+    if (base === null) continue
+    // Nudge toward the implement people mean by default. Small enough that it never beats a
+    // better text match, large enough to settle near-identical ones.
+    const score = base + (11 - EQUIPMENT_RANK[e.equipment]) * 4
+    scored.push({ exercise: e, score })
+  }
+
+  return scored
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        displayName(a.exercise).localeCompare(displayName(b.exercise)),
+    )
+    .map((s) => s.exercise)
+}
+
+/** Roughly how likely you meant this implement, when the score can't tell them apart. */
+const EQUIPMENT_RANK: Record<Equipment, number> = {
+  bodyweight: 0,
+  barbell: 1,
+  dumbbell: 2,
+  cable: 3,
+  machine: 4,
+  ez_bar: 5,
+  smith: 6,
+  kettlebell: 7,
+  t_bar: 8,
+  trap_bar: 9,
+  band: 10,
 }
