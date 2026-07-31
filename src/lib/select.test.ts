@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { byId } from "./catalog"
 import { fingerprint } from "./samples"
 import { dayEntries, personalRecordIds } from "./select"
-import { planPush } from "./remote"
+import { acknowledgeDivergence, planPush } from "./remote"
 import type { RemoteConfig, SetEntry } from "./types"
 
 let n = 0
@@ -144,5 +144,46 @@ describe("push planning", () => {
 
     const deleted = planPush(config, [sets[0]!])
     expect(deleted.deletedIds).toEqual(["s2"])
+  })
+})
+
+describe("dismissing divergence", () => {
+  const base: RemoteConfig = { url: "https://x/ingest", token: "t", pushed: {} }
+  const pushedState = (sets: SetEntry[]): RemoteConfig => ({
+    ...base,
+    pushed: Object.fromEntries(sets.map((s) => [s.id, fingerprint(s, byId(s.exerciseId)!)])),
+  })
+
+  it("clears the notice without queuing anything to send", () => {
+    // The whole point: neither a delete nor an edit can be repaired remotely, so the only
+    // honest action is to stop reporting them. It must not turn them into pending pushes.
+    reset()
+    const sets = [
+      set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 }),
+      set("plank.bodyweight", "2026-07-31", "16:10:00", { durationSec: 60 }),
+      set("push_up.bodyweight", "2026-07-31", "16:20:00", { reps: 30 }),
+    ]
+    const config = pushedState(sets)
+    // One deleted, one edited.
+    const now = [{ ...sets[0]!, weightKg: 90 }, sets[2]!]
+
+    const before = planPush(config, now)
+    expect(before.deletedIds).toHaveLength(1)
+    expect(before.changed).toHaveLength(1)
+
+    const after = planPush(acknowledgeDivergence(config, now), now)
+    expect(after.deletedIds).toEqual([])
+    expect(after.changed).toEqual([])
+    expect(after.fresh).toEqual([])
+  })
+
+  it("leaves genuinely unsent sets alone", () => {
+    reset()
+    const pushed = [set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 })]
+    const config = pushedState(pushed)
+    const withNew = [...pushed, set("plank.bodyweight", "2026-07-31", "16:10:00", { durationSec: 60 })]
+
+    const after = planPush(acknowledgeDivergence(config, withNew), withNew)
+    expect(after.fresh.map((s) => s.id)).toEqual(["s2"])
   })
 })

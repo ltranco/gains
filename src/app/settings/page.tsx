@@ -6,7 +6,7 @@ import { SubPageBar } from "@/components/TopBar"
 import { Alert, Check, Close, Spinner } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { formatStamp, todayKey } from "@/lib/date"
-import { applyPull, planPush, pullSets, pushSets } from "@/lib/remote"
+import { acknowledgeDivergence, applyPull, planPush, pullSets, pushSets } from "@/lib/remote"
 import { parseState } from "@/lib/store"
 import type { ClockFormat, ThemeChoice, UnitSystem } from "@/lib/types"
 import { useRemote } from "@/providers/RemoteProvider"
@@ -334,19 +334,24 @@ function StorageSection() {
       )}
 
       {!error && stale > 0 && (
-        <Note
-          tone="bad"
-          title="These can't be corrected remotely. The store only ever appends, so a Pull would bring them back."
-        >
-          <Alert size={14} />
-          {[
-            plan.changed.length > 0 && `${plan.changed.length} edited`,
-            plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
-          ]
-            .filter(Boolean)
-            .join(", ")}
-          , out of sync
-        </Note>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className="flex items-center gap-1.5 text-[13px]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <Alert size={14} />
+            {[
+              plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
+              plan.changed.length > 0 && `${plan.changed.length} edited`,
+            ]
+              .filter(Boolean)
+              .join(", ")}{" "}
+            after pushing. Push can&apos;t undo those.
+          </span>
+          <Button onClick={() => setConfig(acknowledgeDivergence(config, state.sets))}>
+            Dismiss
+          </Button>
+        </div>
       )}
 
       <div className="mt-4 flex flex-col items-start gap-1.5">

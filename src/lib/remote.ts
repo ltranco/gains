@@ -186,6 +186,34 @@ export function resetPushState(config: RemoteConfig): RemoteConfig {
   return { ...config, pushed: {} }
 }
 
+/**
+ * Stops reporting sets that diverged, without sending anything.
+ *
+ * Neither kind of divergence can be repaired: the store only appends, so a deleted set stays
+ * there and an edited one keeps its original value. Reporting them forever with no way to act
+ * is worse than useless, because it reads as "you have unsynced work" when there is nothing to
+ * sync. This accepts the remote as it stands.
+ *
+ * Deleted sets are dropped from the bookkeeping entirely. Edited sets keep their entry, updated
+ * to the current local values, so they aren't re-offered as fresh on the next push, which would
+ * half-apply the edit: dedup keeps the larger value per field, so a weight going up and reps
+ * coming down would leave the remote holding a set that never happened.
+ */
+export function acknowledgeDivergence(
+  config: RemoteConfig,
+  sets: SetEntry[],
+): RemoteConfig {
+  const plan = planPush(config, sets)
+  const pushed = { ...(config.pushed ?? {}) }
+
+  for (const id of plan.deletedIds) delete pushed[id]
+  for (const set of plan.changed) {
+    const ex = byId(set.exerciseId)
+    if (ex) pushed[set.id] = fingerprint(set, ex)
+  }
+  return { ...config, pushed }
+}
+
 /** Local state with a pulled set list swapped in, preferences untouched. */
 export function applyPull(state: GainsState, sets: SetEntry[]): GainsState {
   return { ...state, sets }
