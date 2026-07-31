@@ -82,8 +82,12 @@ export function readRemote(): RemoteConfig {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== "object" || parsed === null) return EMPTY_REMOTE
     const c = parsed as Partial<RemoteConfig>
+    // Every field of RemoteConfig has to be listed here. `readUrl` was added to the type and
+    // to the writer but not to this parser, so it was saved and then silently dropped on the
+    // next load — the field just emptied itself.
     return {
       url: typeof c.url === "string" ? c.url : "",
+      readUrl: typeof c.readUrl === "string" ? c.readUrl : "",
       token: typeof c.token === "string" ? c.token : "",
       ...(typeof c.lastSyncedAt === "string" ? { lastSyncedAt: c.lastSyncedAt } : {}),
       pushed: typeof c.pushed === "object" && c.pushed !== null ? c.pushed : {},
