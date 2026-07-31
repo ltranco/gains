@@ -62,10 +62,11 @@ export function instantOn(dayKey: string): string {
 }
 
 /**
- * `2026-07-31 14:32` — always 24-hour, never am/pm.
+ * `2026-07-31 14:32:58` — always 24-hour, never am/pm, seconds included.
  *
  * Not `toLocaleString()`, which picks 12- or 24-hour from the browser locale and lands on
- * "7/31/2026, 2:32:58 PM". This is a diagnostic stamp; it's unambiguous or it's useless.
+ * "7/31/2026, 2:32:58 PM". Seconds matter here: two syncs a minute apart are common while
+ * you're testing, and a stamp that can't tell them apart says nothing.
  */
 export function formatStamp(iso: string | undefined): string {
   if (!iso) return "—"
@@ -74,7 +75,7 @@ export function formatStamp(iso: string | undefined): string {
   const p = (n: number) => n.toString().padStart(2, "0")
   return (
     `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
-    `${p(d.getHours())}:${p(d.getMinutes())}`
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
   )
 }
 

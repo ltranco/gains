@@ -230,6 +230,7 @@ function StorageSection() {
   const [config, setConfig] = useState<RemoteConfig>(EMPTY_REMOTE)
   const [push, setPush] = useState<ActionState>({ kind: "idle" })
   const [pull, setPull] = useState<ActionState>({ kind: "idle" })
+  const [armed, setArmed] = useState(false)
 
   useEffect(() => setConfig(readRemote()), [])
 
@@ -290,17 +291,39 @@ function StorageSection() {
         />
       </div>
 
-      <div className="mt-2.5 flex flex-wrap gap-2">
-        <ActionButton label="Push" state={push} onClick={doPush} disabled={!canPush} />
-        <ActionButton
-          label="Pull"
-          state={pull}
-          onClick={doPull}
-          disabled={!canPull}
-          title={canPull ? undefined : "Needs a read endpoint"}
-        />
-        <Button onClick={() => save(resetPushState(config))}>Re-send all</Button>
-      </div>
+      {/* Pull replaces everything logged here, so it asks first. Inline rather than a dialog —
+          it's one decision, and a sheet for a yes/no is heavier than the question. */}
+      {armed ? (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+            Replace everything logged here?
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setArmed(false)
+              void doPull()
+            }}
+            className="rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors"
+            style={{ background: "var(--danger)", color: "#fff" }}
+          >
+            Replace
+          </button>
+          <Button onClick={() => setArmed(false)}>Cancel</Button>
+        </div>
+      ) : (
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          <ActionButton label="Push" state={push} onClick={doPush} disabled={!canPush} />
+          <ActionButton
+            label="Pull"
+            state={pull}
+            onClick={() => setArmed(true)}
+            disabled={!canPull}
+            title={canPull ? undefined : "Needs a read endpoint"}
+          />
+          <Button onClick={() => save(resetPushState(config))}>Re-send all</Button>
+        </div>
+      )}
 
       {/* Only speak up when something is actually out of step — plus the sync time, which is
           a fact rather than a hint, and the reason the 24-hour format matters. */}
@@ -319,15 +342,19 @@ function StorageSection() {
       )}
 
       {!error && stale > 0 && (
-        <Status bad>
+        <p
+          className="mt-2 text-[13px]"
+          style={{ color: "var(--danger)" }}
+          title="These can't be corrected remotely — the store only ever appends. A Pull would bring them back."
+        >
           {[
             plan.changed.length > 0 && `${plan.changed.length} edited`,
             plan.deletedIds.length > 0 && `${plan.deletedIds.length} deleted`,
           ]
             .filter(Boolean)
             .join(", ")}{" "}
-          after pushing — the store only appends, so those stay as first sent.
-        </Status>
+          — out of sync.
+        </p>
       )}
     </Section>
   )
