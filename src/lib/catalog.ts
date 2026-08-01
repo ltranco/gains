@@ -33,6 +33,15 @@ interface MovementDef {
   /** Default for every variant; a variant may override (e.g. bodyweight vs cable crunch). */
   kind: Kind
   variants: Variant[]
+  /**
+   * Other names people actually type. Searched as if they were the movement's name, so
+   * "dumbbell shoulder press" finds Dumbbell Overhead Press.
+   *
+   * One canonical display name keeps the metric prefix stable and the catalog readable, but a
+   * canonical name nobody searches for is a missing exercise as far as the user is concerned:
+   * "shoulder press" and "military press" both returned nothing at all.
+   */
+  also?: string[]
 }
 
 const MOVEMENTS: MovementDef[] = [
@@ -43,6 +52,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell", "machine", "smith"],
+    also: ["chest press", "flat bench"],
   },
   {
     slug: "incline_bench_press",
@@ -50,6 +60,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell", "machine", "smith"],
+    also: ["incline press"],
   },
   {
     slug: "decline_bench_press",
@@ -57,6 +68,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell", "machine"],
+    also: ["decline press"],
   },
   {
     slug: "chest_fly",
@@ -64,6 +76,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["dumbbell", "cable", "machine"],
+    also: ["pec fly", "pec deck", "chest flye"],
   },
   {
     slug: "incline_chest_fly",
@@ -71,6 +84,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["dumbbell", "cable"],
+    also: ["incline flye"],
   },
   // Weight-based, not rep-based: a dip belt makes this a loadable movement, and bodyweight
   // is simply 0kg on the same scale. Same call as pull ups, for the same reason.
@@ -80,6 +94,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: [{ eq: "bodyweight", name: "Dip" }],
+    also: ["tricep dip", "chest dip", "parallel bar dip"],
   },
   {
     slug: "push_up",
@@ -87,6 +102,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "reps",
     variants: [{ eq: "bodyweight", name: "Push Up" }],
+    also: ["pushup", "press up"],
   },
   {
     slug: "diamond_push_up",
@@ -110,6 +126,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell", "machine", "smith"],
+    also: ["shoulder press", "military press", "ohp"],
   },
   {
     slug: "arnold_press",
@@ -124,6 +141,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["dumbbell", "cable", "machine"],
+    also: ["side raise", "lat raise", "delt raise"],
   },
   {
     slug: "front_raise",
@@ -140,6 +158,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["cable"],
+    also: ["pressdown", "rope pushdown", "cable pushdown"],
   },
   {
     slug: "overhead_tricep_extension",
@@ -147,6 +166,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "push",
     kind: "weight_reps",
     variants: ["dumbbell", "cable", "ez_bar"],
+    also: ["french press", "tricep extension"],
   },
   {
     slug: "skull_crusher",
@@ -178,6 +198,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: [{ eq: "bodyweight", name: "Pull Up" }],
+    also: ["pullup"],
   },
   {
     slug: "chin_up",
@@ -185,6 +206,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: [{ eq: "bodyweight", name: "Chin Up" }],
+    also: ["chinup"],
   },
   {
     slug: "neutral_grip_pull_up",
@@ -206,6 +228,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell", "cable", "machine", "t_bar", "smith"],
+    also: ["bent over row", "bent-over row"],
   },
   {
     slug: "lat_pulldown",
@@ -213,6 +236,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: ["cable", "machine"],
+    also: ["pulldown"],
   },
   {
     slug: "close_grip_lat_pulldown",
@@ -234,6 +258,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: ["barbell", "trap_bar", "dumbbell"],
+    also: ["conventional deadlift"],
   },
   {
     slug: "rack_pull",
@@ -255,6 +280,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: ["dumbbell", "cable", "machine"],
+    also: ["reverse fly", "rear delt raise", "reverse pec deck"],
   },
   {
     slug: "shrug",
@@ -262,6 +288,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell", "trap_bar", "machine", "smith"],
+    also: ["trap shrug"],
   },
   {
     slug: "upright_row",
@@ -286,6 +313,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "pull",
     kind: "weight_reps",
     variants: ["dumbbell", "barbell", "ez_bar", "cable", "machine", "band"],
+    also: ["arm curl", "curl"],
   },
   {
     slug: "hammer_curl",
@@ -344,6 +372,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["barbell", "smith", "dumbbell"],
+    also: ["back squat"],
   },
   {
     slug: "front_squat",
@@ -365,6 +394,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: [{ eq: "kettlebell", name: "Kettlebell Swing" }],
+    also: ["swing", "kb swing"],
   },
   {
     slug: "goblet_squat",
@@ -393,6 +423,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["machine"],
+    also: ["quad extension", "knee extension"],
   },
   {
     slug: "lunge",
@@ -418,6 +449,7 @@ const MOVEMENTS: MovementDef[] = [
       "barbell",
       { eq: "bodyweight", kind: "reps", name: "Bulgarian Split Squat" },
     ],
+    also: ["rear foot elevated split squat", "rfess"],
   },
   {
     slug: "step_up",
@@ -441,6 +473,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["barbell", "dumbbell"],
+    also: ["rdl", "stiff leg deadlift"],
   },
   {
     slug: "leg_curl",
@@ -448,6 +481,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["machine"],
+    also: ["hamstring curl", "lying leg curl"],
   },
   {
     slug: "seated_leg_curl",
@@ -469,6 +503,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["barbell", "machine"],
+    also: ["glute thrust"],
   },
   {
     slug: "glute_bridge",
@@ -490,6 +525,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["barbell"],
+    also: ["gm"],
   },
   {
     slug: "back_extension",
@@ -497,6 +533,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: [{ eq: "bodyweight", name: "Back Extension" }, "machine"],
+    also: ["hyperextension"],
   },
 
   // ─── Legs — calves & hips ─────────────────────────────────────────────────
@@ -512,6 +549,7 @@ const MOVEMENTS: MovementDef[] = [
       "dumbbell",
       { eq: "bodyweight", kind: "reps", name: "Calf Raise" },
     ],
+    also: ["standing calf raise"],
   },
   {
     slug: "seated_calf_raise",
@@ -526,6 +564,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["machine", "cable"],
+    also: ["abductor", "hip abductor"],
   },
   {
     slug: "hip_adduction",
@@ -533,6 +572,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "legs",
     kind: "weight_reps",
     variants: ["machine"],
+    also: ["adductor", "hip adductor"],
   },
 
   // ─── Core — holds ─────────────────────────────────────────────────────────
@@ -586,6 +626,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "core",
     kind: "reps",
     variants: [{ eq: "bodyweight", name: "Sit Up" }],
+    also: ["situp"],
   },
   {
     slug: "leg_raise",
@@ -600,6 +641,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "core",
     kind: "reps",
     variants: [{ eq: "bodyweight", name: "Hanging Leg Raise" }],
+    also: ["hanging knee raise"],
   },
   {
     slug: "toes_to_bar",
@@ -677,6 +719,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "cardio",
     kind: "distance",
     variants: [{ eq: "bodyweight", name: "Run" }],
+    also: ["jog", "running"],
   },
   {
     slug: "treadmill",
@@ -719,6 +762,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "cardio",
     kind: "distance",
     variants: [{ eq: "machine", name: "Rowing Machine" }],
+    also: ["erg", "concept2", "rower"],
   },
   {
     slug: "ski_erg",
@@ -733,6 +777,7 @@ const MOVEMENTS: MovementDef[] = [
     group: "cardio",
     kind: "duration",
     variants: [{ eq: "machine", name: "Stationary Bike" }],
+    also: ["spin bike", "exercise bike"],
   },
   {
     slug: "assault_bike",
@@ -794,6 +839,7 @@ function build(): Exercise[] {
         equipment: variant.eq,
         group: def.group,
         kind: variant.kind ?? def.kind,
+        ...(def.also ? { also: def.also } : {}),
       })
     }
   }
@@ -859,7 +905,13 @@ export function search(query: string): Exercise[] {
   const scored: { exercise: Exercise; score: number }[] = []
   for (const e of CATALOG) {
     const name = displayName(e)
-    const primary = fuzzyScoreTerms(q, name)
+    // Synonyms are scored as if they were the name, implement included, so "dumbbell shoulder
+    // press" reaches Dumbbell Overhead Press exactly as "dumbbell overhead press" does.
+    const candidates = [name, ...aliasNames(e)]
+    const primary = candidates.reduce<number | null>((best, cand) => {
+      const s = fuzzyScoreTerms(q, cand)
+      return s === null ? best : best === null ? s : Math.max(best, s)
+    }, null)
     const secondary = fuzzyScoreTerms(q, `${name} ${e.movement} ${EQUIPMENT_LABEL[e.equipment]} ${e.group}`)
 
     const base = primary !== null ? primary : secondary !== null ? secondary * 0.4 - 20 : null
@@ -877,6 +929,14 @@ export function search(query: string): Exercise[] {
         displayName(a.exercise).localeCompare(displayName(b.exercise)),
     )
     .map((s) => s.exercise)
+}
+
+/** Each synonym rendered the way the display name is, so the implement is searchable too. */
+function aliasNames(e: Exercise): string[] {
+  if (!e.also) return []
+  return e.also.map((alias) =>
+    e.equipment === "bodyweight" ? alias : `${EQUIPMENT_LABEL[e.equipment]} ${alias}`,
+  )
 }
 
 /**

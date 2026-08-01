@@ -33,6 +33,8 @@ export interface Exercise {
   equipment: Equipment
   group: Group
   kind: Kind
+  /** Alternative names for search only. Never displayed, never stored. */
+  also?: string[]
 }
 
 /**

@@ -89,3 +89,39 @@ describe("fuzzy search", () => {
     expect(search("   ")).toEqual([])
   })
 })
+
+describe("synonyms", () => {
+  it("finds the overhead press by the names people actually use", () => {
+    // This was the real report: "dumbbell shoulder press" returned nothing at all, so as far
+    // as anyone using the app was concerned the exercise did not exist.
+    expect(top("dumbbell shoulder press")[0]).toBe("Dumbbell Overhead Press")
+    expect(top("db shoulder press")[0]).toBe("Dumbbell Overhead Press")
+    expect(top("military press")).toContain("Barbell Overhead Press")
+  })
+
+  it.each([
+    ["chest press", "Barbell Bench Press"],
+    ["pulldown", "Cable Lat Pulldown"],
+    ["hamstring curl", "Machine Leg Curl"],
+    ["side raise", "Dumbbell Lateral Raise"],
+    ["reverse fly", "Dumbbell Rear Delt Fly"],
+    ["french press", "Dumbbell Overhead Tricep Extension"],
+    ["hyperextension", "Back Extension"],
+    ["pushup", "Push Up"],
+    ["rfess", "Barbell Bulgarian Split Squat"],
+  ])("resolves %s", (query, expected) => {
+    expect(top(query)).toContain(expected)
+  })
+
+  it("keeps synonyms out of the displayed name", () => {
+    // They exist for search only; a synonym leaking into a label would also leak into the
+    // metric prefix, which is frozen.
+    expect(displayName(byId("overhead_press.dumbbell")!)).toBe("Dumbbell Overhead Press")
+  })
+
+  it("does not let a synonym outrank an exact name match", () => {
+    // "curl" is a synonym of Bicep Curl, but Nordic Curl and Leg Curl are named that.
+    expect(top("leg curl")[0]).toBe("Machine Leg Curl")
+    expect(top("nordic curl")[0]).toBe("Nordic Curl")
+  })
+})
