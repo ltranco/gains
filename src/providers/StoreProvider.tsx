@@ -12,18 +12,36 @@ import {
 
 import { instantOn } from "@/lib/date"
 import { EMPTY_STATE, newId, readState, STORAGE_KEY, parseState, writeState } from "@/lib/store"
-import type { GainsState, Prefs, SetEntry } from "@/lib/types"
+import { allTrackers } from "@/lib/trackers"
+import type { GainsState, Prefs, Reading, SetEntry, Tracker } from "@/lib/types"
 
 interface StoreApi {
   state: GainsState
   /** False until localStorage has been read on the client. Guards SSR/first-paint mismatch. */
   hydrated: boolean
+  /** Builtins with stored overrides applied, then custom ones. What every screen reads. */
+  trackers: Tracker[]
   addSet: (set: Omit<SetEntry, "id" | "loggedAt">) => void
   updateSet: (id: string, patch: Partial<Omit<SetEntry, "id">>) => void
   deleteSet: (id: string) => void
   /** Puts a deleted set back exactly as it was, id included. Backs the undo toast. */
   restoreSet: (set: SetEntry) => void
   duplicateSet: (id: string) => void
+  /**
+   * Adds readings, all sharing one instant.
+   *
+   * Plural because a meal is several numbers measured at once — calories and three macros — and
+   * that is also the shape an inference service will hand back from a photo of a plate. Timestamp
+   * nudging is per series, so four readings at one instant collide with nothing.
+   */
+  addReadings: (readings: Omit<Reading, "id" | "loggedAt">[]) => void
+  updateReading: (id: string, patch: Partial<Omit<Reading, "id">>) => void
+  deleteReading: (id: string) => void
+  restoreReading: (reading: Reading) => void
+  /** Writes a full tracker under its id, shadowing a builtin or replacing a custom one. */
+  saveTracker: (tracker: Tracker) => void
+  /** Drops a custom tracker. Its readings go with it — a reading with no tracker is unreadable. */
+  removeTracker: (id: string) => void
   setPrefs: (patch: Partial<Prefs>) => void
   replaceAll: (state: GainsState) => void
 }
@@ -95,32 +113,100 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
+  const addReadings = useCallback((readings: Omit<Reading, "id" | "loggedAt">[]) => {
+    if (readings.length === 0) return
+    setState((s) => {
+      // One instant for the whole batch, so a meal's four numbers are recognisably one event
+      // rather than four that happen to be close together.
+      const loggedAt = instantOn(readings[0]!.date)
+      return {
+        ...s,
+        readings: [...s.readings, ...readings.map((r) => ({ ...r, id: newId(), loggedAt }))],
+      }
+    })
+  }, [])
+
+  const updateReading = useCallback((id: string, patch: Partial<Omit<Reading, "id">>) => {
+    setState((s) => ({
+      ...s,
+      readings: s.readings.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }))
+  }, [])
+
+  const deleteReading = useCallback((id: string) => {
+    setState((s) => ({ ...s, readings: s.readings.filter((x) => x.id !== id) }))
+  }, [])
+
+  const restoreReading = useCallback((reading: Reading) => {
+    setState((s) =>
+      s.readings.some((x) => x.id === reading.id)
+        ? s
+        : { ...s, readings: [...s.readings, reading] },
+    )
+  }, [])
+
+  const saveTracker = useCallback((tracker: Tracker) => {
+    setState((s) => {
+      const has = s.trackers.some((t) => t.id === tracker.id)
+      return {
+        ...s,
+        trackers: has
+          ? s.trackers.map((t) => (t.id === tracker.id ? tracker : t))
+          : [...s.trackers, tracker],
+      }
+    })
+  }, [])
+
+  const removeTracker = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      trackers: s.trackers.filter((t) => t.id !== id),
+      readings: s.readings.filter((r) => r.trackerId !== id),
+    }))
+  }, [])
+
   const setPrefs = useCallback((patch: Partial<Prefs>) => {
     setState((s) => ({ ...s, prefs: { ...s.prefs, ...patch } }))
   }, [])
 
   const replaceAll = useCallback((next: GainsState) => setState(next), [])
 
+  const trackers = useMemo(() => allTrackers(state.trackers), [state.trackers])
+
   const api = useMemo<StoreApi>(
     () => ({
       state,
       hydrated,
+      trackers,
       addSet,
       updateSet,
       deleteSet,
       restoreSet,
       duplicateSet,
+      addReadings,
+      updateReading,
+      deleteReading,
+      restoreReading,
+      saveTracker,
+      removeTracker,
       setPrefs,
       replaceAll,
     }),
     [
       state,
       hydrated,
+      trackers,
       addSet,
       updateSet,
       deleteSet,
       restoreSet,
       duplicateSet,
+      addReadings,
+      updateReading,
+      deleteReading,
+      restoreReading,
+      saveTracker,
+      removeTracker,
       setPrefs,
       replaceAll,
     ],

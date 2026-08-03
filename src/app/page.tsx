@@ -5,30 +5,73 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { BottomBar } from "@/components/BottomBar"
 import { DatePicker } from "@/components/DatePicker"
 import { DayLog } from "@/components/DayLog"
+import { DayReadingsLog } from "@/components/DayReadingsLog"
 import { EmptyDay } from "@/components/EmptyDay"
 import { ExercisePicker } from "@/components/ExercisePicker"
+import { ReadingSheet } from "@/components/ReadingSheet"
+import { Rings } from "@/components/Rings"
 import { SetEntrySheet, summarise } from "@/components/SetEntrySheet"
 import { Toast } from "@/components/Toast"
 import { TopBar } from "@/components/TopBar"
+import { TrackerPicker } from "@/components/TrackerPicker"
 import { isFuture, shiftDay, todayKey } from "@/lib/date"
-import { dayEntries, loggedDays, personalRecordIds } from "@/lib/select"
-import type { Exercise, SetEntry } from "@/lib/types"
+import {
+  dayEntries,
+  dayProgress,
+  dayReadings,
+  loggedDays,
+  personalRecordIds,
+  readingDays,
+} from "@/lib/select"
+import { nutritionTrackers } from "@/lib/trackers"
+import { formatTracker } from "@/lib/units"
+import type { Exercise, Reading, SetEntry, Tracker } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
 
 export default function Today() {
-  const { state, hydrated, duplicateSet, deleteSet, restoreSet } = useStore()
+  const {
+    state,
+    hydrated,
+    trackers,
+    duplicateSet,
+    deleteSet,
+    restoreSet,
+    deleteReading,
+    restoreReading,
+  } = useStore()
   const [date, setDate] = useState(todayKey)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [foodOpen, setFoodOpen] = useState(false)
   const [entry, setEntry] = useState<{ exercise: Exercise; editing: SetEntry | null } | null>(
     null,
   )
-  const [undo, setUndo] = useState<{ set: SetEntry; message: string } | null>(null)
+  const [reading, setReading] = useState<{ tracker: Tracker; editing: Reading | null } | null>(
+    null,
+  )
+  /**
+   * Undo carries its own restore, rather than a set the page has to know how to put back. Two
+   * kinds of thing can be deleted now, and the toast has no business caring which one it was.
+   */
+  const [undo, setUndo] = useState<{ message: string; restore: () => void } | null>(null)
   const [dateOpen, setDateOpen] = useState(false)
 
   const entries = useMemo(() => dayEntries(state.sets, date), [state.sets, date])
-  const logged = useMemo(() => new Set(loggedDays(state.sets)), [state.sets])
+  const readings = useMemo(
+    () => dayReadings(state.readings, trackers, date),
+    [state.readings, trackers, date],
+  )
+  const progress = useMemo(
+    () => dayProgress(state.readings, nutritionTrackers(trackers), date),
+    [state.readings, trackers, date],
+  )
+  // Both kinds of entry get a dot in the date picker: a day you only ate on is still a logged day.
+  const logged = useMemo(
+    () => new Set([...loggedDays(state.sets), ...readingDays(state.readings)]),
+    [state.sets, state.readings],
+  )
   const records = useMemo(() => personalRecordIds(state.sets), [state.sets])
   const openPicker = useCallback(() => setPickerOpen(true), [])
+  const openFood = useCallback(() => setFoodOpen(true), [])
   const step = useCallback(
     (days: number) =>
       setDate((d) => {
@@ -38,7 +81,9 @@ export default function Today() {
     [],
   )
 
-  // Desktop shortcuts: n or / to add, arrows to move through days, t for today.
+  const busy = pickerOpen || foodOpen || Boolean(entry) || Boolean(reading) || dateOpen
+
+  // Desktop shortcuts: n or / to add an exercise, f for food, arrows to move through days.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -46,13 +91,17 @@ export default function Today() {
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) {
         return
       }
-      if (pickerOpen || entry || dateOpen) return
+      if (busy) return
 
       switch (e.key) {
         case "n":
         case "/":
           e.preventDefault()
           openPicker()
+          break
+        case "f":
+          e.preventDefault()
+          openFood()
           break
         case "ArrowLeft":
           step(-1)
@@ -71,12 +120,25 @@ export default function Today() {
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [openPicker, pickerOpen, entry, dateOpen, step])
+  }, [openPicker, openFood, busy, step])
 
-  const handleDelete = (set: SetEntry, exercise: Exercise) => {
+  const handleDeleteSet = (set: SetEntry, exercise: Exercise) => {
     deleteSet(set.id)
-    setUndo({ set, message: `Deleted ${summarise(set, exercise, state.prefs.units)}` })
+    setUndo({
+      message: `Deleted ${summarise(set, exercise, state.prefs.units)}`,
+      restore: () => restoreSet(set),
+    })
   }
+
+  const handleDeleteReading = (deleted: Reading, tracker: Tracker) => {
+    deleteReading(deleted.id)
+    setUndo({
+      message: `Deleted ${formatTracker(deleted.value, tracker, state.prefs.units)}`,
+      restore: () => restoreReading(deleted),
+    })
+  }
+
+  const nothingLogged = entries.length === 0 && readings.length === 0
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-[560px] flex-col">
@@ -92,19 +154,42 @@ export default function Today() {
               style={{ background: "var(--bg-active)" }}
             />
           </div>
-        ) : entries.length === 0 ? (
-          <EmptyDay isToday={date === todayKey()} />
         ) : (
-          <DayLog
-            entries={entries}
-            units={state.prefs.units}
-            clock={state.prefs.clock}
-            onAddTo={(exercise) => setEntry({ exercise, editing: null })}
-            onEdit={(exercise, set) => setEntry({ exercise, editing: set })}
-            onDuplicate={(set) => duplicateSet(set.id)}
-            onDelete={handleDelete}
-            records={records}
-          />
+          <>
+            {/* Keyed by day so the arcs sweep again when you move to another one — a ring that
+                silently jumps to a new value reads as a rendering glitch. */}
+            <Rings
+              key={date}
+              progress={progress}
+              units={state.prefs.units}
+              onPick={(tracker) => setReading({ tracker, editing: null })}
+            />
+
+            {nothingLogged ? (
+              <EmptyDay isToday={date === todayKey()} />
+            ) : (
+              <>
+                <DayLog
+                  entries={entries}
+                  units={state.prefs.units}
+                  clock={state.prefs.clock}
+                  onAddTo={(exercise) => setEntry({ exercise, editing: null })}
+                  onEdit={(exercise, set) => setEntry({ exercise, editing: set })}
+                  onDuplicate={(set) => duplicateSet(set.id)}
+                  onDelete={handleDeleteSet}
+                  records={records}
+                />
+                <DayReadingsLog
+                  groups={readings}
+                  units={state.prefs.units}
+                  clock={state.prefs.clock}
+                  onAddTo={(tracker) => setReading({ tracker, editing: null })}
+                  onEdit={(tracker, edited) => setReading({ tracker, editing: edited })}
+                  onDelete={handleDeleteReading}
+                />
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -112,7 +197,8 @@ export default function Today() {
         date={date}
         onStep={step}
         onOpenPicker={() => setDateOpen(true)}
-        onAdd={openPicker}
+        onAddExercise={openPicker}
+        onAddFood={openFood}
       />
 
       <DatePicker
@@ -131,7 +217,7 @@ export default function Today() {
           message={undo.message}
           actionLabel="Undo"
           onAction={() => {
-            restoreSet(undo.set)
+            undo.restore()
             setUndo(null)
           }}
           onDismiss={() => setUndo(null)}
@@ -147,12 +233,31 @@ export default function Today() {
         }}
       />
 
+      <TrackerPicker
+        open={foodOpen}
+        trackers={trackers}
+        units={state.prefs.units}
+        onClose={() => setFoodOpen(false)}
+        onPick={(tracker) => {
+          setFoodOpen(false)
+          setReading({ tracker, editing: null })
+        }}
+      />
+
       <SetEntrySheet
         open={Boolean(entry)}
         exercise={entry?.exercise ?? null}
         editing={entry?.editing ?? null}
         date={date}
         onClose={() => setEntry(null)}
+      />
+
+      <ReadingSheet
+        open={Boolean(reading)}
+        tracker={reading?.tracker ?? null}
+        editing={reading?.editing ?? null}
+        date={date}
+        onClose={() => setReading(null)}
       />
     </main>
   )

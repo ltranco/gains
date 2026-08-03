@@ -1,5 +1,5 @@
 import { byId } from "./catalog"
-import type { Exercise, Kind, SetEntry } from "./types"
+import type { Exercise, Kind, Reading, SetEntry, Tracker } from "./types"
 
 export interface DayEntry {
   exercise: Exercise
@@ -71,6 +71,107 @@ export function recentExerciseIds(all: SetEntry[], limit = 8): string[] {
 /** Day keys that have at least one set, newest first. */
 export function loggedDays(all: SetEntry[]): string[] {
   return [...new Set(all.map((s) => s.date))].sort((a, b) => b.localeCompare(a))
+}
+
+/* ── Readings ────────────────────────────────────────────────────────────────── */
+
+export interface DayReadings {
+  tracker: Tracker
+  /** That day's readings, oldest first. */
+  readings: Reading[]
+  /** The day's one number: a sum, or the latest reading. See `Tracker.mode`. */
+  total: number
+}
+
+/**
+ * A day's readings grouped by tracker, in the trackers' own order rather than the order they
+ * were logged.
+ *
+ * This is the opposite call from `dayEntries`, on purpose. Exercises read as a session — the
+ * order you did them in is information. Calories and protein are four fixed slots you fill in
+ * any order, and having them jump around between days makes the block unreadable at a glance.
+ */
+export function dayReadings(
+  all: Reading[],
+  trackers: Tracker[],
+  date: string,
+): DayReadings[] {
+  const ofDay = all
+    .filter((r) => r.date === date)
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+
+  const out: DayReadings[] = []
+  for (const tracker of trackers) {
+    const readings = ofDay.filter((r) => r.trackerId === tracker.id)
+    if (readings.length === 0) continue
+    out.push({ tracker, readings, total: collapse(readings, tracker) })
+  }
+  return out
+}
+
+/**
+ * A day's entries as one number, or undefined if nothing was logged.
+ *
+ * `sum` accumulates — four meals make one calorie total. `point` takes the last reading of the
+ * day, because adding two waist measurements together would be nonsense and averaging them
+ * would invent a number that was never measured.
+ */
+export function dayTotal(
+  all: Reading[],
+  tracker: Tracker,
+  date: string,
+): number | undefined {
+  const ofDay = all
+    .filter((r) => r.trackerId === tracker.id && r.date === date)
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+  if (ofDay.length === 0) return undefined
+  return collapse(ofDay, tracker)
+}
+
+/** Expects `readings` already sorted oldest first. */
+function collapse(readings: Reading[], tracker: Tracker): number {
+  if (tracker.mode === "point") return readings[readings.length - 1]?.value ?? 0
+  return round(readings.reduce((n, r) => n + r.value, 0))
+}
+
+// Float dust: 0.1 + 0.2 worth of protein entries should not render as 0.30000000000000004.
+function round(n: number): number {
+  return Math.round(n * 1000) / 1000
+}
+
+export interface Progress {
+  tracker: Tracker
+  /** Logged so far today. Zero when nothing has been logged, so the ring still draws empty. */
+  total: number
+  target: number
+  /** `total / target`, uncapped — over 1 means over target, which the ring shows as a second lap. */
+  fraction: number
+}
+
+/**
+ * Ring data for the trackers that can have a ring.
+ *
+ * A tracker without a target is skipped rather than drawn at zero. An arc is a fraction of
+ * something; with no denominator there is nothing truthful to draw, so those render as a plain
+ * number instead.
+ */
+export function dayProgress(
+  all: Reading[],
+  trackers: Tracker[],
+  date: string,
+): Progress[] {
+  const out: Progress[] = []
+  for (const tracker of trackers) {
+    if (tracker.target === undefined || tracker.target <= 0) continue
+    const total = dayTotal(all, tracker, date) ?? 0
+    out.push({ tracker, total, target: tracker.target, fraction: total / tracker.target })
+  }
+  return out
+}
+
+/** Day keys that have at least one reading, newest first. Feeds the date picker's dots. */
+export function readingDays(all: Reading[]): string[] {
+  return [...new Set(all.map((r) => r.date))].sort((a, b) => b.localeCompare(a))
 }
 
 /**

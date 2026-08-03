@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { reconstruct } from "./reconstruct"
-import { parseMetric, payloadFor, readSelector, tombstonePayload } from "./samples"
+import { parseMetric, payloadFor, readSelector, syncSets, tombstonePayload } from "./samples"
 import type { SetEntry } from "./types"
 
 let n = 0
@@ -25,7 +25,7 @@ const SESSION = () => {
 }
 
 describe("what each kind emits", () => {
-  const p = payloadFor(SESSION())
+  const p = payloadFor(syncSets(SESSION()))
 
   it("emits weight, reps and volume for a loaded movement", () => {
     expect(Object.values(p.barbell_squat_volume ?? {})[0]).toBe(500)
@@ -60,11 +60,11 @@ describe("timestamps must be unique per exercise", () => {
     // Two samples of one metric at the same millisecond collapse under dedup, and the
     // survivor is whichever value is larger, so a duplicated set would eat its twin.
     n = 0
-    const p = payloadFor([
+    const p = payloadFor(syncSets([
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 }),
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 8 }),
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 3 }),
-    ])
+    ]))
     const stamps = Object.keys(p.barbell_squat_reps ?? {})
     expect(stamps).toHaveLength(3)
     expect(Object.values(p.barbell_squat_reps ?? {}).sort((a, b) => a - b)).toEqual([3, 5, 8])
@@ -72,10 +72,10 @@ describe("timestamps must be unique per exercise", () => {
 
   it("leaves different exercises at the same instant alone", () => {
     n = 0
-    const p = payloadFor([
+    const p = payloadFor(syncSets([
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 }),
       set("bench_press.barbell", "2026-07-31", "16:00:00", { weightKg: 60, reps: 5 }),
-    ])
+    ]))
     expect(Object.keys(p.barbell_squat_reps ?? {})[0]).toBe(
       Object.keys(p.barbell_bench_press_reps ?? {})[0],
     )
@@ -85,7 +85,7 @@ describe("timestamps must be unique per exercise", () => {
 describe("the read selector can't sweep up the rest of the stack", () => {
   it("is anchored on the measure suffix", () => {
     expect(readSelector()).toBe(
-      '{__name__=~"health_.+_(weight|reps|volume|seconds|metres|deleted)"}',
+      '{__name__=~"health_.+_(weight|reps|volume|seconds|metres|kcal|g|mg|ml|cm|count|pct|deleted)"}',
     )
   })
 
@@ -107,7 +107,7 @@ describe("the read selector can't sweep up the rest of the stack", () => {
 
 /** Re-encodes a payload the way VictoriaMetrics' export endpoint emits it. */
 const exportLines = (sets: SetEntry[]) =>
-    Object.entries(payloadFor(sets))
+    Object.entries(payloadFor(syncSets(sets)))
       .map(([metric, byTime]) => {
         const pairs = Object.entries(byTime)
           .map(([at, v]) => [Date.parse(at), v] as const)

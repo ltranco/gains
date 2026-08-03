@@ -1,8 +1,17 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
-import { planPush, pushSets } from "@/lib/remote"
+import { planPush, pushLog } from "@/lib/remote"
+import { syncablesOf, type Syncable } from "@/lib/samples"
 import { EMPTY_REMOTE, readRemote, writeRemote } from "@/lib/store"
 import type { RemoteConfig } from "@/lib/types"
 import { useStore } from "./StoreProvider"
@@ -31,7 +40,7 @@ interface RemoteApi {
 const RemoteContext = createContext<RemoteApi | null>(null)
 
 export function RemoteProvider({ children }: { children: React.ReactNode }) {
-  const { state, hydrated } = useStore()
+  const { state, hydrated, trackers } = useStore()
   const [config, setConfigState] = useState<RemoteConfig>(EMPTY_REMOTE)
   const [autoBusy, setAutoBusy] = useState(false)
   const [autoError, setAutoError] = useState<string | null>(null)
@@ -47,8 +56,11 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   // and restarted on every keystroke in the token field or every set you log.
   const configRef = useRef(config)
   configRef.current = config
-  const setsRef = useRef(state.sets)
-  setsRef.current = state.sets
+  const itemsRef = useRef<Syncable[]>([])
+  itemsRef.current = useMemo(
+    () => syncablesOf(state.sets, state.readings, trackers),
+    [state.sets, state.readings, trackers],
+  )
   const inFlight = useRef(false)
 
   useEffect(() => {
@@ -60,11 +72,11 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       // Overlapping pushes would double-send: the second builds its plan before the first has
       // recorded what it sent.
       if (inFlight.current) return
-      if (planPush(current, setsRef.current).fresh.length === 0) return
+      if (planPush(current, itemsRef.current).fresh.length === 0) return
 
       inFlight.current = true
       setAutoBusy(true)
-      const res = await pushSets(current, setsRef.current)
+      const res = await pushLog(current, itemsRef.current)
       inFlight.current = false
       setAutoBusy(false)
 

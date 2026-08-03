@@ -1,13 +1,27 @@
-import type { GainsState, Prefs, RemoteConfig, SetEntry } from "./types"
+import { TRACKER_UNITS } from "./types"
+import type {
+  GainsState,
+  Prefs,
+  Reading,
+  RemoteConfig,
+  SetEntry,
+  Tracker,
+  TrackerUnit,
+} from "./types"
 
 /**
  * The whole persistence layer. One localStorage key holding one JSON document, versioned
  * from day one so a future migration has something to switch on rather than having to sniff
  * the shape.
  *
- * Sets are a flat array rather than a map keyed by day. Grouping by day is cheap to do in
- * memory and this shape is what the remote sync ships verbatim — nesting would mean two
+ * Sets and readings are flat arrays rather than maps keyed by day. Grouping by day is cheap to do
+ * in memory and this shape is what the remote sync ships verbatim — nesting would mean two
  * representations to keep honest.
+ *
+ * The document went to `version: 2` when readings arrived, and the storage key stayed at `v1` on
+ * purpose: the key is what an existing install reads, so bumping it would silently orphan every
+ * logged set. The parser fills what a v1 document is missing, which is all the migration this
+ * needs.
  */
 
 export const STORAGE_KEY = "gains.v1"
@@ -19,7 +33,13 @@ export const DEFAULT_PREFS: Prefs = {
   accent: "indigo",
 }
 
-export const EMPTY_STATE: GainsState = { version: 1, sets: [], prefs: DEFAULT_PREFS }
+export const EMPTY_STATE: GainsState = {
+  version: 2,
+  sets: [],
+  readings: [],
+  trackers: [],
+  prefs: DEFAULT_PREFS,
+}
 
 /** Never throws. A corrupt or partial document degrades to empty rather than a blank screen. */
 export function parseState(raw: string | null): GainsState {
@@ -29,8 +49,11 @@ export function parseState(raw: string | null): GainsState {
     if (typeof parsed !== "object" || parsed === null) return EMPTY_STATE
     const doc = parsed as Partial<GainsState>
     return {
-      version: 1,
+      version: 2,
       sets: Array.isArray(doc.sets) ? doc.sets.filter(isSetEntry) : [],
+      // A v1 document has neither of these. Absent is empty, not a failure to load.
+      readings: Array.isArray(doc.readings) ? doc.readings.filter(isReading) : [],
+      trackers: Array.isArray(doc.trackers) ? doc.trackers.flatMap(asTracker) : [],
       prefs: { ...DEFAULT_PREFS, ...(doc.prefs ?? {}) },
     }
   } catch {
@@ -46,6 +69,45 @@ function isSetEntry(v: unknown): v is SetEntry {
     typeof s.exerciseId === "string" &&
     typeof s.date === "string"
   )
+}
+
+function isReading(v: unknown): v is Reading {
+  if (typeof v !== "object" || v === null) return false
+  const r = v as Partial<Reading>
+  return (
+    typeof r.id === "string" &&
+    typeof r.trackerId === "string" &&
+    typeof r.date === "string" &&
+    typeof r.value === "number" &&
+    Number.isFinite(r.value)
+  )
+}
+
+/**
+ * A stored tracker, field by field — flatMap so an unusable one drops out rather than arriving
+ * half-formed.
+ *
+ * Every field has to be listed. This is the same shape of bug that silently emptied `readUrl`:
+ * written by the writer, absent from the parser, so it vanished on the next load. A tracker
+ * missing its `target` here would lose its ring the first time the app was reopened.
+ */
+function asTracker(v: unknown): Tracker[] {
+  if (typeof v !== "object" || v === null) return []
+  const t = v as Partial<Tracker>
+  if (typeof t.id !== "string" || !t.id) return []
+  if (typeof t.name !== "string" || !t.name) return []
+  if (!TRACKER_UNITS.includes(t.unit as TrackerUnit)) return []
+  return [
+    {
+      id: t.id,
+      name: t.name,
+      unit: t.unit as TrackerUnit,
+      mode: t.mode === "point" ? "point" : "sum",
+      ...(typeof t.target === "number" && Number.isFinite(t.target) ? { target: t.target } : {}),
+      ...(t.nutrition === true ? { nutrition: true } : {}),
+      ...(t.recovered === true ? { recovered: true } : {}),
+    },
+  ]
 }
 
 /** Reads storage. Returns empty state during SSR, where `window` doesn't exist. */

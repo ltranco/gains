@@ -1,7 +1,7 @@
 "use client"
 
 import { formatDayLabel, isFuture, shiftDay } from "@/lib/date"
-import { ChevronLeft, ChevronRight, Plus } from "./icons"
+import { Apple, Barbell, ChevronLeft, ChevronRight } from "./icons"
 
 /**
  * Everything you touch mid-session, docked to the bottom edge — on a phone this is the only
@@ -10,17 +10,24 @@ import { ChevronLeft, ChevronRight, Plus } from "./icons"
  * The layout is fixed: two arrows and a date, always the same three slots. A "Today" button
  * that appeared and vanished depending on the selected day shifted everything each time it
  * came and went; Today now lives inside the date picker, where it belongs.
+ *
+ * Two add buttons, not one with a menu. Exercise and food are both logged several times a day,
+ * so making either of them a second tap behind a chooser taxes the two things this app is for.
+ * Anything logged weekly — a waist measurement — does not earn a slot here; it's a section down
+ * inside the food picker, findable by search.
  */
 export function BottomBar({
   date,
   onStep,
   onOpenPicker,
-  onAdd,
+  onAddExercise,
+  onAddFood,
 }: {
   date: string
   onStep: (days: number) => void
   onOpenPicker: () => void
-  onAdd: () => void
+  onAddExercise: () => void
+  onAddFood: () => void
 }) {
   return (
     <div
@@ -52,18 +59,38 @@ export function BottomBar({
         </StepButton>
       </div>
 
-      <div className="px-3 pt-1">
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg py-3 text-[15px] font-semibold transition-colors"
-          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-        >
-          <Plus size={17} />
-          Add
-        </button>
+      <div className="flex gap-2 px-3 pt-1">
+        <AddButton label="Exercise" onClick={onAddExercise}>
+          <Barbell size={17} />
+        </AddButton>
+        <AddButton label="Food" onClick={onAddFood}>
+          <Apple size={17} />
+        </AddButton>
       </div>
     </div>
+  )
+}
+
+/** Equal weight, equal width. Neither of these is the secondary one. */
+function AddButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-3 text-[15px] font-semibold transition-colors"
+      style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+    >
+      {children}
+      {label}
+    </button>
   )
 }
 

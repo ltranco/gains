@@ -1,7 +1,13 @@
-import { byId } from "./catalog"
 import { reconstruct } from "./reconstruct"
-import { buildSamples, fingerprint, payloadFor, readSelector, tombstonePayload } from "./samples"
-import type { GainsState, RemoteConfig, SetEntry } from "./types"
+import {
+  buildSamples,
+  payloadFor,
+  readSelector,
+  syncablesOf,
+  tombstonePayload,
+  type Syncable,
+} from "./samples"
+import type { GainsState, Reading, RemoteConfig, SetEntry, Tracker } from "./types"
 
 /**
  * Client side of the bring-your-own storage layer.
@@ -12,30 +18,33 @@ import type { GainsState, RemoteConfig, SetEntry } from "./types"
  * Both carry `Authorization: Bearer <token>` — one credential. Both go through
  * `/api/remote` on our own origin so an arbitrary endpoint needn't serve CORS headers.
  *
- * The store only appends and its delete API is not exposed, so removing a set is itself an
- * append: a tombstone at the removed set's timestamp. Push sends those alongside new sets, and
+ * The store only appends and its delete API is not exposed, so removing an entry is itself an
+ * append: a tombstone at the removed entry's timestamp. Push sends those alongside new ones, and
  * every reader — this app and the dashboard's panel JS — replays the same rule. The server
  * holds the whole event log and stays authoritative.
+ *
+ * Everything here works on `Syncable`, so sets and readings travel the same path. See
+ * `lib/samples.ts`.
  */
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export interface Tombstone {
-  /** Local set id, so bookkeeping can be cleared once the tombstone lands. */
+  /** Local id, so bookkeeping can be cleared once the tombstone lands. */
   id: string
   prefix: string
   at: number
-  /** True when the set still exists locally and is being rewritten rather than removed. */
+  /** True when the entry still exists locally and is being rewritten rather than removed. */
   replaced: boolean
 }
 
 export interface PushPlan {
-  /** Sets never sent before. */
-  fresh: SetEntry[]
-  /** Sets deleted locally after being pushed. Each becomes a tombstone. */
+  /** Entries never sent before. */
+  fresh: Syncable[]
+  /** Entries deleted locally after being pushed. Each becomes a tombstone. */
   tombstones: Tombstone[]
   /**
-   * Sets edited after being pushed. Repaired the same way a delete is: tombstone the samples
+   * Entries edited after being pushed. Repaired the same way a delete is: tombstone the samples
    * at their old timestamp, then write the new values at a fresh one.
    *
    * Re-sending in place cannot work. The samples sit at a fixed timestamp and dedup keeps the
@@ -43,29 +52,28 @@ export interface PushPlan {
    * holding a set that never happened. And the new copy has to land at least a millisecond
    * clear of the old, or the tombstone that voids the original voids the correction with it.
    */
-  changed: SetEntry[]
+  changed: Syncable[]
   sampleCount: number
 }
 
-export function planPush(config: RemoteConfig, sets: SetEntry[]): PushPlan {
+export function planPush(config: RemoteConfig, items: Syncable[]): PushPlan {
   const pushed = config.pushed ?? {}
-  const live = new Map(sets.map((s) => [s.id, s]))
+  const live = new Map(items.map((i) => [i.id, i]))
 
-  const fresh: SetEntry[] = []
-  const changed: SetEntry[] = []
+  const fresh: Syncable[] = []
+  const changed: Syncable[] = []
 
-  for (const set of sets) {
-    const ex = byId(set.exerciseId)
-    if (!ex) continue
-    const seen = pushed[set.id]
-    if (seen === undefined) fresh.push(set)
-    else if (seen.fp !== fingerprint(set, ex)) changed.push(set)
+  for (const item of items) {
+    const seen = pushed[item.id]
+    if (seen === undefined) fresh.push(item)
+    else if (seen.fp !== item.fp) changed.push(item)
   }
 
   const tombstones: Tombstone[] = []
+  const changedIds = new Set(changed.map((i) => i.id))
   for (const [id, entry] of Object.entries(pushed)) {
-    // Deleted, or edited: both retract what is stored. An edit then re-lands as a fresh set.
-    if (!live.has(id) || changed.some((s) => s.id === id)) {
+    // Deleted, or edited: both retract what is stored. An edit then re-lands as a fresh sample.
+    if (!live.has(id) || changedIds.has(id)) {
       tombstones.push({ id, prefix: entry.prefix, at: entry.at, replaced: live.has(id) })
     }
   }
@@ -80,18 +88,18 @@ export function planPush(config: RemoteConfig, sets: SetEntry[]): PushPlan {
 }
 
 /** Keeps each request comfortably under the shim's 1MB body limit. */
-const SETS_PER_REQUEST = 150
+const ENTRIES_PER_REQUEST = 150
 
 export interface PushOutcome extends PushPlan {
   written: number
   config: RemoteConfig
 }
 
-export async function pushSets(
+export async function pushLog(
   config: RemoteConfig,
-  sets: SetEntry[],
+  items: Syncable[],
 ): Promise<Result<PushOutcome>> {
-  const plan = planPush(config, sets)
+  const plan = planPush(config, items)
   if (plan.fresh.length === 0 && plan.tombstones.length === 0 && plan.changed.length === 0) {
     return { ok: true, value: { ...plan, written: 0, config } }
   }
@@ -99,17 +107,27 @@ export async function pushSets(
   const pushed = { ...(config.pushed ?? {}) }
   let written = 0
 
-  // An edited set is rewritten at least a millisecond past where it used to live, so the
+  // An edited entry is rewritten at least a millisecond past where it used to live, so the
   // tombstone retracting the original cannot swallow the correction as well.
   const previous = new Map(plan.tombstones.map((t) => [t.id, t.at]))
-  const rewritten = plan.changed.map((set) => {
-    const old = previous.get(set.id) ?? 0
-    const wanted = Date.parse(set.loggedAt)
-    return wanted > old ? set : { ...set, loggedAt: new Date(old + 1).toISOString() }
+  const rewritten = plan.changed.map((item) => {
+    const old = previous.get(item.id) ?? 0
+    const wanted = Date.parse(item.loggedAt)
+    return wanted > old ? item : { ...item, loggedAt: new Date(old + 1).toISOString() }
   })
   const outgoing = [...plan.fresh, ...rewritten]
 
-  // Tombstones first. If the run dies halfway, the store having forgotten a set it should
+  /**
+   * The fingerprint to *record* is the local entry's own, never the rewritten copy's.
+   *
+   * A rewritten entry carries a shifted `loggedAt`, which is part of the fingerprint. Storing
+   * that meant the next plan compared the local entry against a fingerprint it could never
+   * produce, so an edited set looked edited again forever: every push re-tombstoned it, wrote
+   * another copy a millisecond further along, and Settings sat on a permanent "1 edited to sync".
+   */
+  const localFp = new Map(items.map((i) => [i.id, i.fp]))
+
+  // Tombstones first. If the run dies halfway, the store having forgotten an entry it should
   // forget is a better resting place than it holding one it shouldn't.
   if (plan.tombstones.length > 0) {
     const res = await call({
@@ -122,8 +140,8 @@ export async function pushSets(
     for (const t of plan.tombstones) delete pushed[t.id]
   }
 
-  for (let i = 0; i < outgoing.length; i += SETS_PER_REQUEST) {
-    const batch = outgoing.slice(i, i + SETS_PER_REQUEST)
+  for (let i = 0; i < outgoing.length; i += ENTRIES_PER_REQUEST) {
+    const batch = outgoing.slice(i, i + ENTRIES_PER_REQUEST)
     const res = await call({
       url: config.url,
       token: config.token,
@@ -137,15 +155,15 @@ export async function pushSets(
       }
     }
     written += res.value.written ?? 0
-    // Record where each set actually landed, collision nudge included, so a later tombstone
+    // Record where each entry actually landed, collision nudge included, so a later tombstone
     // points at the sample that exists rather than the one we intended to write.
-    const { stampBySetId, prefixBySetId } = buildSamples(batch)
-    for (const set of batch) {
-      const ex = byId(set.exerciseId)
-      const at = stampBySetId.get(set.id)
-      const prefix = prefixBySetId.get(set.id)
-      if (!ex || at === undefined || prefix === undefined) continue
-      pushed[set.id] = { fp: fingerprint(set, ex), at, prefix }
+    const { stampById, prefixById } = buildSamples(batch)
+    for (const item of batch) {
+      const at = stampById.get(item.id)
+      const prefix = prefixById.get(item.id)
+      const fp = localFp.get(item.id)
+      if (at === undefined || prefix === undefined || fp === undefined) continue
+      pushed[item.id] = { fp, at, prefix }
     }
   }
 
@@ -161,12 +179,23 @@ export async function pushSets(
 
 export interface PullOutcome {
   sets: SetEntry[]
+  readings: Reading[]
+  /** Trackers that had to be rebuilt, so the UI can say their mode is a guess. */
+  recovered: Tracker[]
   voided: number
   unknownPrefixes: string[]
   config: RemoteConfig
 }
 
-export async function pullSets(config: RemoteConfig): Promise<Result<PullOutcome>> {
+/**
+ * @param trackers the *resolved* list — builtins merged with stored ones, i.e.
+ * `allTrackers(state.trackers)`. Passing only the stored half would make every builtin look
+ * unknown and get rebuilt as a duplicate.
+ */
+export async function pullLog(
+  config: RemoteConfig,
+  trackers: Tracker[],
+): Promise<Result<PullOutcome>> {
   if (!config.readUrl?.trim()) {
     return { ok: false, error: "No read endpoint configured." }
   }
@@ -182,17 +211,22 @@ export async function pullSets(config: RemoteConfig): Promise<Result<PullOutcome
   })
   if (!res.ok) return res
 
-  const { sets, voided, unknownPrefixes } = reconstruct(res.value.body ?? "")
+  const { sets, readings, recovered, voided, unknownPrefixes } = reconstruct(
+    res.value.body ?? "",
+    trackers,
+  )
 
-  // A pulled set is by definition already stored, at the timestamp it came back on.
+  const merged = mergeTrackers(trackers, recovered)
+
+  // A pulled entry is by definition already stored, at the timestamp it came back on.
   const pushed: Record<string, { fp: string; at: number; prefix: string }> = {}
-  const { stampBySetId, prefixBySetId } = buildSamples(sets)
-  for (const set of sets) {
-    const ex = byId(set.exerciseId)
-    const at = stampBySetId.get(set.id)
-    const prefix = prefixBySetId.get(set.id)
-    if (ex && at !== undefined && prefix !== undefined) {
-      pushed[set.id] = { fp: fingerprint(set, ex), at, prefix }
+  const items = syncablesOf(sets, readings, merged)
+  const { stampById, prefixById } = buildSamples(items)
+  for (const item of items) {
+    const at = stampById.get(item.id)
+    const prefix = prefixById.get(item.id)
+    if (at !== undefined && prefix !== undefined) {
+      pushed[item.id] = { fp: item.fp, at, prefix }
     }
   }
 
@@ -200,11 +234,22 @@ export async function pullSets(config: RemoteConfig): Promise<Result<PullOutcome
     ok: true,
     value: {
       sets,
+      readings,
+      recovered,
       voided,
       unknownPrefixes,
       config: { ...config, pushed, lastSyncedAt: new Date().toISOString() },
     },
   }
+}
+
+/**
+ * Stored trackers win over rebuilt ones. A local definition knows its mode and its target;
+ * a rebuilt one guessed both.
+ */
+export function mergeTrackers(stored: Tracker[], recovered: Tracker[]): Tracker[] {
+  const have = new Set(stored.map((t) => t.id))
+  return [...stored, ...recovered.filter((t) => !have.has(t.id))]
 }
 
 interface CallBody {
@@ -229,12 +274,24 @@ async function call(body: CallBody): Promise<Result<{ written?: number; body?: s
   }
 }
 
-/** Forgets push bookkeeping so the next push re-sends every set. */
+/** Forgets push bookkeeping so the next push re-sends everything. */
 export function resetPushState(config: RemoteConfig): RemoteConfig {
   return { ...config, pushed: {} }
 }
 
-/** Local state with a pulled set list swapped in, preferences untouched. */
-export function applyPull(state: GainsState, sets: SetEntry[]): GainsState {
-  return { ...state, sets }
+/**
+ * Local state with the pulled log swapped in, preferences untouched.
+ *
+ * Replaces rather than merges, for both sets and readings: merging needs a rule for "both sides
+ * changed the same entry" and inventing one silently is how a log stops matching what happened.
+ * Trackers are the exception — those are definitions, not history, so a rebuilt one is appended
+ * rather than allowed to overwrite what this device already knows.
+ */
+export function applyPull(state: GainsState, pulled: PullOutcome): GainsState {
+  return {
+    ...state,
+    sets: pulled.sets,
+    readings: pulled.readings,
+    trackers: mergeTrackers(state.trackers, pulled.recovered),
+  }
 }

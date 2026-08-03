@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { byId } from "./catalog"
-import { fingerprint, prefixOf } from "./samples"
+import { syncSet, syncSets } from "./samples"
 import { dayEntries, personalRecordIds } from "./select"
 import { planPush } from "./remote"
 import type { RemoteConfig, SetEntry } from "./types"
@@ -112,10 +111,10 @@ describe("push planning", () => {
   const pushedState = (sets: SetEntry[]): RemoteConfig => ({
     ...base,
     pushed: Object.fromEntries(
-      sets.map((s) => [
-        s.id,
-        { fp: fingerprint(s, byId(s.exerciseId)!), at: Date.parse(s.loggedAt), prefix: prefixOf(byId(s.exerciseId)!) },
-      ]),
+      sets.map((s) => {
+        const item = syncSet(s)!
+        return [s.id, { fp: item.fp, at: Date.parse(s.loggedAt), prefix: item.prefix }]
+      }),
     ),
   })
 
@@ -125,9 +124,9 @@ describe("push planning", () => {
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 }),
       set("plank.bodyweight", "2026-07-31", "16:10:00", { durationSec: 60 }),
     ]
-    expect(planPush(base, sets).fresh).toHaveLength(2)
+    expect(planPush(base, syncSets(sets)).fresh).toHaveLength(2)
     // Idempotence is what makes auto-push safe to run every minute.
-    expect(planPush(pushedState(sets), sets).fresh).toHaveLength(0)
+    expect(planPush(pushedState(sets), syncSets(sets)).fresh).toHaveLength(0)
   })
 
   it("reports edits and deletes instead of re-sending them", () => {
@@ -141,11 +140,11 @@ describe("push planning", () => {
     const config = pushedState(sets)
     const edited = [{ ...sets[0]!, weightKg: 90 }, sets[1]!]
 
-    const plan = planPush(config, edited)
+    const plan = planPush(config, syncSets(edited))
     expect(plan.changed).toHaveLength(1)
     expect(plan.fresh).toHaveLength(0)
 
-    const deleted = planPush(config, [sets[0]!])
+    const deleted = planPush(config, syncSets([sets[0]!]))
     expect(deleted.tombstones.map((t) => t.id)).toEqual(["s2"])
   })
 })
@@ -155,10 +154,10 @@ describe("an edit repairs itself on the next push", () => {
   const pushedState = (sets: SetEntry[]): RemoteConfig => ({
     ...base,
     pushed: Object.fromEntries(
-      sets.map((s) => [
-        s.id,
-        { fp: fingerprint(s, byId(s.exerciseId)!), at: Date.parse(s.loggedAt), prefix: prefixOf(byId(s.exerciseId)!) },
-      ]),
+      sets.map((s) => {
+        const item = syncSet(s)!
+        return [s.id, { fp: item.fp, at: Date.parse(s.loggedAt), prefix: item.prefix }]
+      }),
     ),
   })
 
@@ -171,7 +170,7 @@ describe("an edit repairs itself on the next push", () => {
     const config = pushedState([original])
     const edited = [{ ...original, weightKg: 90 }]
 
-    const plan = planPush(config, edited)
+    const plan = planPush(config, syncSets(edited))
     expect(plan.changed).toHaveLength(1)
     expect(plan.tombstones).toHaveLength(1)
     expect(plan.tombstones[0]!.at).toBe(Date.parse(original.loggedAt))
@@ -185,7 +184,7 @@ describe("an edit repairs itself on the next push", () => {
       set("squat.barbell", "2026-07-31", "16:00:00", { weightKg: 100, reps: 5 }),
       set("plank.bodyweight", "2026-07-31", "16:10:00", { durationSec: 60 }),
     ]
-    const plan = planPush(pushedState(sets), [sets[0]!])
+    const plan = planPush(pushedState(sets), syncSets([sets[0]!]))
     expect(plan.tombstones).toHaveLength(1)
     expect(plan.tombstones[0]!.id).toBe("s2")
     expect(plan.tombstones[0]!.replaced).toBe(false)
@@ -197,7 +196,7 @@ describe("an edit repairs itself on the next push", () => {
     const config = pushedState([original])
     const moved = [{ ...original, loggedAt: new Date("2026-07-31T18:30:00-07:00").toISOString() }]
 
-    const plan = planPush(config, moved)
+    const plan = planPush(config, syncSets(moved))
     expect(plan.changed).toHaveLength(1)
     expect(plan.tombstones[0]!.at).toBe(Date.parse(original.loggedAt))
   })

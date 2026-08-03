@@ -1,4 +1,4 @@
-import type { UnitSystem } from "./types"
+import { UNIT_LABEL, type Tracker, type TrackerUnit, type UnitSystem } from "./types"
 
 /**
  * Storage is metric, always — kilograms, metres, seconds. Imperial exists only as a
@@ -131,4 +131,72 @@ export function parseReps(input: string): number | undefined {
   const n = numeric(input)
   if (!Number.isInteger(n) || n <= 0) return undefined
   return n
+}
+
+/* ── Tracker units ───────────────────────────────────────────────────────────── */
+
+const CM_PER_IN = 2.54
+
+export const cmToIn = (cm: number): number => cm / CM_PER_IN
+export const inToCm = (inches: number): number => inches * CM_PER_IN
+
+/**
+ * How many decimals a unit is worth showing.
+ *
+ * Calories and counts are whole — 2,140.5 kcal is false precision on a number nobody measured
+ * that closely. A body measurement gets one, because half a centimetre over a month is the
+ * signal. Percentages get one for the same reason.
+ */
+const PLACES: Record<TrackerUnit, number> = {
+  kcal: 0,
+  g: 0,
+  mg: 0,
+  ml: 0,
+  cm: 1,
+  count: 0,
+  pct: 1,
+}
+
+/**
+ * What the unit is called on screen. Only `cm` moves with the unit system — a gram is a gram in
+ * both, and nobody wants calories in kilojoules.
+ */
+export function trackerUnit(unit: TrackerUnit, u: UnitSystem): string {
+  if (unit === "cm") return u === "metric" ? "cm" : "in"
+  return UNIT_LABEL[unit]
+}
+
+/** Canonical stored value → display number, without a unit suffix. */
+export function trackerValue(value: number, unit: TrackerUnit, u: UnitSystem): string {
+  if (unit === "cm" && u === "imperial") return trim(cmToIn(value), 1)
+  return trim(value, PLACES[unit])
+}
+
+/** Value with its unit, the way a row or a ring label reads it. */
+export function formatTracker(value: number, tracker: Tracker, u: UnitSystem): string {
+  const suffix = trackerUnit(tracker.unit, u)
+  // A bare multiplication sign reads better tight against the number: "3×", not "3 ×".
+  const gap = tracker.unit === "count" || tracker.unit === "pct" ? "" : " "
+  return `${trackerValue(value, tracker.unit, u)}${gap}${suffix}`
+}
+
+/**
+ * Display number → canonical stored value.
+ *
+ * Centimetres snap to a millimetre so an inch value survives the round trip: 32 in → 81.28 →
+ * 81.3 → 32 in. Same reasoning as `WEIGHT_STEP_KG`; storing 81.28000000000001 would put a number
+ * on the dashboard that no tape measure produced.
+ */
+export function parseTrackerValue(
+  input: string,
+  unit: TrackerUnit,
+  u: UnitSystem,
+): number | undefined {
+  const n = numeric(input)
+  if (!Number.isFinite(n) || n < 0) return undefined
+  if (unit === "cm") {
+    const cm = u === "metric" ? n : inToCm(n)
+    return Number(cm.toFixed(1))
+  }
+  return Number(n.toFixed(PLACES[unit]))
 }

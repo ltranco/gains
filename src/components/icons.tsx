@@ -115,6 +115,32 @@ export const Alert = (p: IconProps) => (
   </Svg>
 )
 
+/**
+ * A loaded barbell, for the exercise half of the bottom bar.
+ *
+ * Drawn as a bar with two plates each side rather than a dumbbell — the app's own logo is a
+ * barbell, so this reads as "the thing this app has always been about".
+ */
+export const Barbell = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 12h6" />
+    <path d="M6.5 8.5v7M9.5 7v10M14.5 7v10M17.5 8.5v7" />
+    <path d="M3.5 10.5v3M20.5 10.5v3" />
+  </Svg>
+)
+
+/**
+ * An apple, for the food half. A fork-and-knife pair is the obvious choice and the wrong one:
+ * at 17px the tines collapse into a smudge, and it reads as "restaurant" rather than "what I
+ * ate".
+ */
+export const Apple = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 8.5c-1.2-1.4-3-2-4.6-1.2C5.4 8.2 4.5 10.6 5 13c.6 2.9 2.6 6.5 4.7 6.5.9 0 1.5-.4 2.3-.4s1.4.4 2.3.4c2.1 0 4.1-3.6 4.7-6.5.5-2.4-.4-4.8-2.4-5.7-1.6-.8-3.4-.2-4.6 1.2z" />
+    <path d="M12 8.5c.2-1.6 1.3-3 2.9-3.4" />
+  </Svg>
+)
+
 /** Spins via the `.spin` class in globals.css, which respects prefers-reduced-motion. */
 export const Spinner = ({ size = 16, className }: IconProps) => (
   <svg
