@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 
 import { SubPageBar } from "@/components/TopBar"
 import { ChevronDown } from "@/components/icons"
-import { isBuiltin, validateTrackerName } from "@/lib/trackers"
+import { validateTrackerName } from "@/lib/trackers"
 import {
   TRACKER_UNITS,
   type Tracker,
@@ -19,7 +19,8 @@ import { useStore } from "@/providers/StoreProvider"
  * The metrics you log as one number: a waist measurement, a creatine dose.
  *
  * Its own page rather than a section of Settings, which was already long enough to scroll past.
- * Macros are not here — they're fields of a food, and their targets are a preference.
+ * Macros are not here — they're fields of a food, and their targets are a preference. Nothing here
+ * ships with the app either; the list starts empty and every row in it is yours.
  *
  * **Unit is frozen after creation**, like the slug, and for the same reason: the unit is half the
  * metric name. Changing `waist` from cm to inches wouldn't convert anything, it would start writing
@@ -27,7 +28,7 @@ import { useStore } from "@/providers/StoreProvider"
  * shows units in *your* system — you pick what you'll be typing, and the app stores the SI value.
  */
 export default function Metrics() {
-  const { state, hydrated, trackers, saveTracker, removeTracker } = useStore()
+  const { state, hydrated, saveTracker, removeTracker } = useStore()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const units = hydrated ? state.prefs.units : "metric"
@@ -38,7 +39,7 @@ export default function Metrics() {
 
       <div className="px-4 py-4">
         <ul className="flex flex-col">
-          {trackers.map((tracker) => (
+          {state.trackers.map((tracker) => (
             <li key={tracker.id} className="border-b">
               <button
                 type="button"
@@ -84,9 +85,15 @@ export default function Metrics() {
           ))}
         </ul>
 
+        {state.trackers.length === 0 && !adding && (
+          <p className="text-[13px]" style={{ color: "var(--text-faint)" }}>
+            Nothing yet. A waist measurement, a supplement dose — anything you log as one number.
+          </p>
+        )}
+
         {adding ? (
           <NewTracker
-            existing={trackers}
+            existing={state.trackers}
             units={units}
             onCancel={() => setAdding(false)}
             onCreate={(tracker) => {
@@ -223,21 +230,19 @@ function TrackerEditor({
         />
       </Labelled>
 
-      {!isBuiltin(tracker.id) && (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onRemove}
-            className="rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
-            style={{ color: "var(--danger)", borderColor: "var(--border-strong)" }}
-          >
-            Remove
-          </button>
-          <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-            Deletes its entries here too.
-          </span>
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+          style={{ color: "var(--danger)", borderColor: "var(--border-strong)" }}
+        >
+          Remove
+        </button>
+        <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
+          Deletes its entries here too.
+        </span>
+      </div>
     </div>
   )
 }

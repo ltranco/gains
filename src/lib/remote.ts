@@ -195,11 +195,7 @@ export interface PullOutcome {
   config: RemoteConfig
 }
 
-/**
- * @param trackers the *resolved* list — builtins merged with stored ones, i.e.
- * `allTrackers(state.trackers)`. Passing only the stored half would make every builtin look
- * unknown and get rebuilt as a duplicate.
- */
+/** @param trackers the metrics this device knows about, i.e. `state.trackers`. */
 export async function pullLog(
   config: RemoteConfig,
   trackers: Tracker[],

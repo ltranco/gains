@@ -11,8 +11,7 @@ import {
   tombstonePayload,
   type Syncable,
 } from "./samples"
-import { allTrackers } from "./trackers"
-import type { FoodEntry, Reading, SetEntry } from "./types"
+import type { FoodEntry, Reading, SetEntry, Tracker } from "./types"
 
 let n = 0
 const set = (exerciseId: string, date: string, time: string, rest: Partial<SetEntry>): SetEntry => ({
@@ -245,7 +244,10 @@ describe("deletion is an append, not a delete", () => {
 
 /* ── Food: one thing eaten, four series ─────────────────────────────────────── */
 
-const TRACKERS = allTrackers([])
+/** None ship with the app, so a test says which it has. */
+const TRACKERS: Tracker[] = [
+  { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" },
+]
 
 let fn = 0
 const food = (

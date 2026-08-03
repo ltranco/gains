@@ -40,7 +40,7 @@ interface RemoteApi {
 const RemoteContext = createContext<RemoteApi | null>(null)
 
 export function RemoteProvider({ children }: { children: React.ReactNode }) {
-  const { state, hydrated, trackers } = useStore()
+  const { state, hydrated } = useStore()
   const [config, setConfigState] = useState<RemoteConfig>(EMPTY_REMOTE)
   const [autoBusy, setAutoBusy] = useState(false)
   const [autoError, setAutoError] = useState<string | null>(null)
@@ -58,8 +58,8 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   configRef.current = config
   const itemsRef = useRef<Syncable[]>([])
   itemsRef.current = useMemo(
-    () => syncablesOf(state.sets, state.foods, state.readings, trackers),
-    [state.sets, state.foods, state.readings, trackers],
+    () => syncablesOf(state.sets, state.foods, state.readings, state.trackers),
+    [state.sets, state.foods, state.readings, state.trackers],
   )
   const inFlight = useRef(false)
 

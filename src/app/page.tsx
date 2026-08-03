@@ -37,7 +37,6 @@ export default function Today() {
   const {
     state,
     hydrated,
-    trackers,
     duplicateSet,
     deleteSet,
     restoreSet,
@@ -68,12 +67,12 @@ export default function Today() {
   const entries = useMemo(() => dayEntries(state.sets, date), [state.sets, date])
   const foods = useMemo(() => dayFoods(state.foods, date), [state.foods, date])
   const metrics = useMemo(
-    () => dayMetricRows(state.readings, trackers, date),
-    [state.readings, trackers, date],
+    () => dayMetricRows(state.readings, state.trackers, date),
+    [state.readings, state.trackers, date],
   )
   const metricRecords = useMemo(
-    () => metricRecordIds(state.readings, trackers),
-    [state.readings, trackers],
+    () => metricRecordIds(state.readings, state.trackers),
+    [state.readings, state.trackers],
   )
   const progress = useMemo(
     () => dayProgress(state.foods, state.prefs.macros, date),
@@ -266,7 +265,7 @@ export default function Today() {
 
       <MetricPicker
         open={metricsOpen}
-        trackers={trackers}
+        trackers={state.trackers}
         units={state.prefs.units}
         onClose={() => setMetricsOpen(false)}
         onPick={(tracker) => {

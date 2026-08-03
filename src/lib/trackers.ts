@@ -15,34 +15,24 @@ import type { Tracker, TrackerUnit } from "./types"
  * **Macros are not metrics.** Calories, protein, carbs and fat are fields of a `FoodEntry`, not
  * things you log independently — see `lib/food.ts`. An earlier version had them here as four
  * trackers, which made recording one chicken bowl four trips through a picker and left nothing in
- * the log that remembered it was one bowl.
+ * the log that remembered it was one bowl. Those four need special handling; that's what earns them
+ * a place in code.
  *
- * ## Builtins vs custom
+ * ## Every metric is yours. There are no builtins.
  *
- * Builtins live here, in code, so shipping a new one reaches every device without migrating
- * stored data. Custom trackers live in `GainsState`, because they're data: they have to survive
- * an export and come back.
+ * Waist shipped as one for a while, on the grounds that an empty list looks like a broken feature.
+ * That was the wrong trade: a waist measurement needs no special handling whatsoever, so putting it
+ * in code bought a two-tier system — a shadowing merge rule, a can't-be-removed exception — to
+ * privilege one circumference over thigh and neck for no reason anyone could defend. The list starts
+ * empty and everything in it is data.
  *
- * Editing a builtin — a different calorie target, a shorter name — stores a full copy under the
- * same id, which shadows the builtin. That keeps one merge rule instead of a separate overrides
- * document that could disagree with itself.
+ * ## What can never be a metric
  *
- * ## What is deliberately absent
- *
- * **No bodyweight, and no step count.** HealthKit already pushes `health_weight` and
- * `health_step` from an iOS Shortcut. A second writer on those series would mean two lines that
- * disagree whenever both were used, and a deletion here would tombstone a HealthKit sample. Those
- * slugs are reserved and rejected — see `validateTrackerName`.
+ * **Bodyweight and step count.** HealthKit already pushes `health_weight` and `health_step` from an
+ * iOS Shortcut. A second writer on those series would mean two lines that disagree whenever both
+ * were used, and a deletion here would tombstone a HealthKit sample. Those slugs are reserved and
+ * rejected — see `validateTrackerName`.
  */
-
-/**
- * One shipped example, so the feature isn't an empty list on first run. Everything else is yours.
- *
- * Point, not sum: two waist measurements in a day are one waist, not a bigger one.
- */
-export const BUILTIN_TRACKERS: Tracker[] = [
-  { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" },
-]
 
 /** Metric prefixes the exercise catalog already owns, so a tracker can't claim one. */
 const EXERCISE_PREFIXES: Set<string> = new Set(CATALOG.map(prefixOf))
@@ -55,28 +45,8 @@ const EXERCISE_PREFIXES: Set<string> = new Set(CATALOG.map(prefixOf))
  */
 const HEALTHKIT = new Set(["weight", "step", "ingest"])
 
-/**
- * Builtins with stored copies shadowing them, then anything custom, in creation order.
- *
- * Order is the display order everywhere — the picker, the rings, Settings — so it's fixed here
- * once rather than re-sorted per screen.
- */
-export function allTrackers(stored: Tracker[]): Tracker[] {
-  const byId = new Map(stored.map((t) => [t.id, t]))
-  const out = BUILTIN_TRACKERS.map((b) => byId.get(b.id) ?? b)
-  const builtinIds = new Set(BUILTIN_TRACKERS.map((b) => b.id))
-  for (const t of stored) {
-    if (!builtinIds.has(t.id)) out.push(t)
-  }
-  return out
-}
-
 export function trackerById(trackers: Tracker[], id: string): Tracker | undefined {
   return trackers.find((t) => t.id === id)
-}
-
-export function isBuiltin(id: string): boolean {
-  return BUILTIN_TRACKERS.some((b) => b.id === id)
 }
 
 /**

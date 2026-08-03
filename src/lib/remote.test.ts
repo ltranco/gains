@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { applyPull, mergeTrackers, planPush, pushLog } from "./remote"
 import { syncFoods, syncReadings, syncSets, type Syncable } from "./samples"
 import { EMPTY_STATE } from "./store"
-import { allTrackers } from "./trackers"
 import type { PullOutcome } from "./remote"
 import type { FoodEntry, Reading, RemoteConfig, SetEntry, Tracker } from "./types"
 
@@ -29,7 +28,10 @@ function captureFetch() {
 afterEach(() => vi.unstubAllGlobals())
 
 const CONFIG: RemoteConfig = { url: "https://x/ingest", token: "t", pushed: {} }
-const TRACKERS = allTrackers([])
+/** None ship with the app, so a test says which it has. */
+const TRACKERS: Tracker[] = [
+  { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" },
+]
 
 const aSet = (over: Partial<SetEntry> = {}): SetEntry => ({
   id: "s1",

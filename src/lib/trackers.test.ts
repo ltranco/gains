@@ -2,14 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { CATALOG } from "./catalog"
 import { measuresOf, prefixOf } from "./samples"
-import {
-  BUILTIN_TRACKERS,
-  allTrackers,
-  nameFromPrefix,
-  recoveredTracker,
-  searchTrackers,
-  validateTrackerName,
-} from "./trackers"
+import { nameFromPrefix, recoveredTracker, searchTrackers, validateTrackerName } from "./trackers"
 import { TRACKER_UNITS, type Tracker } from "./types"
 
 const TOMBSTONE = "deleted"
@@ -36,12 +29,20 @@ function everyMetricName(trackers: Tracker[]): string[] {
   return out
 }
 
+/** A plausible set of user-defined metrics, since none ship with the app. */
+const MINE: Tracker[] = [
+  { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" },
+  { id: "neck", name: "Neck", unit: "cm", mode: "point" },
+  { id: "creatine", name: "Creatine", unit: "g", mode: "sum" },
+  { id: "coffee", name: "Coffee", unit: "count", mode: "sum" },
+]
+
 describe("the metric namespace has room for both kinds of thing", () => {
   it("cannot produce one name two ways", () => {
     // A collision merges two different things into one series, and there is no unpicking that
     // afterwards. `_deleted` is the sharp edge: it names no measure, so an exercise and a
-    // tracker sharing a prefix would void each other's samples.
-    const names = everyMetricName(BUILTIN_TRACKERS)
+    // metric sharing a prefix would void each other's samples.
+    const names = everyMetricName(MINE)
     const dupes = names.filter((n, i) => names.indexOf(n) !== i)
     expect(dupes).toEqual([])
   })
@@ -54,10 +55,10 @@ describe("the metric namespace has room for both kinds of thing", () => {
     expect(TRACKER_UNITS).not.toContain(TOMBSTONE)
   })
 
-  it("emits nothing under a builtin's name from the exercise side", () => {
+  it("emits nothing under a metric's unit from the exercise side", () => {
     // Belt and braces on the check above: no set of any exercise produces a measure key that
-    // matches a builtin tracker's unit.
-    const units = new Set<string>(BUILTIN_TRACKERS.map((t) => t.unit))
+    // matches a metric's unit.
+    const units = new Set<string>(TRACKER_UNITS)
     for (const ex of CATALOG) {
       const keys = Object.keys(
         measuresOf(
@@ -96,13 +97,13 @@ describe("naming a new metric", () => {
   })
 
   it("refuses a duplicate and a name with nothing in it", () => {
-    expect("error" in validateTrackerName("Waist", BUILTIN_TRACKERS)).toBe(true)
+    expect("error" in validateTrackerName("Waist", MINE)).toBe(true)
     expect("error" in validateTrackerName("   ", [])).toBe(true)
     expect("error" in validateTrackerName("!!!", [])).toBe(true)
   })
 
   it("accepts an ordinary one and slugs it", () => {
-    expect(validateTrackerName("Resting Heart Rate", BUILTIN_TRACKERS)).toEqual({
+    expect(validateTrackerName("Resting Heart Rate", MINE)).toEqual({
       id: "resting_heart_rate",
     })
   })
@@ -120,30 +121,6 @@ describe("the slug never moves", () => {
   })
 })
 
-describe("builtins and stored trackers", () => {
-  it("lets a stored copy shadow a builtin without duplicating it", () => {
-    const merged = allTrackers([
-      { id: "waist", name: "Waistline", unit: "cm", mode: "point", target: 80, better: "lower" },
-    ])
-    expect(merged.filter((t) => t.id === "waist")).toHaveLength(1)
-    expect(merged.find((t) => t.id === "waist")?.target).toBe(80)
-    // Order is the display order, so a shadowed builtin stays where it was.
-    expect(merged[0]?.id).toBe("waist")
-  })
-
-  it("appends custom trackers after the builtins", () => {
-    const merged = allTrackers([{ id: "creatine", name: "Creatine", unit: "g", mode: "sum" }])
-    expect(merged).toHaveLength(BUILTIN_TRACKERS.length + 1)
-    expect(merged.at(-1)?.id).toBe("creatine")
-  })
-
-  it("ships every builtin with a slug that is already frozen", () => {
-    for (const t of BUILTIN_TRACKERS) {
-      expect(t.id, `${t.name} slug`).toMatch(/^[a-z0-9_]+$/)
-    }
-  })
-})
-
 describe("rebuilding a tracker from the remote", () => {
   it("titles the prefix back into something readable", () => {
     expect(nameFromPrefix("resting_heart_rate")).toBe("Resting Heart Rate")
@@ -158,18 +135,23 @@ describe("rebuilding a tracker from the remote", () => {
   })
 })
 
+describe("naming a macro", () => {
+  it("is refused, because those belong to a food", () => {
+    for (const taken of ["Calories", "Protein", "Carbs", "Fat"]) {
+      expect("error" in validateTrackerName(taken, MINE), taken).toBe(true)
+    }
+  })
+})
+
 describe("search", () => {
-  it("finds a metric by name, in any order, and by unit", () => {
-    const all = allTrackers([])
-    // Waist doesn't get a button in the bottom bar, so search is how it's reached.
-    expect(searchTrackers("waist", all)[0]?.id).toBe("waist")
-    expect(searchTrackers("cm", all)[0]?.id).toBe("waist")
+  it("finds a metric by name and by unit", () => {
+    expect(searchTrackers("waist", MINE)[0]?.id).toBe("waist")
+    expect(searchTrackers("creat", MINE)[0]?.id).toBe("creatine")
   })
 
   it("returns nothing for an empty query or nonsense", () => {
-    const all = allTrackers([])
-    expect(searchTrackers("", all)).toEqual([])
-    expect(searchTrackers("   ", all)).toEqual([])
-    expect(searchTrackers("zzzzz", all)).toEqual([])
+    expect(searchTrackers("", MINE)).toEqual([])
+    expect(searchTrackers("   ", MINE)).toEqual([])
+    expect(searchTrackers("zzzzz", MINE)).toEqual([])
   })
 })

@@ -369,7 +369,7 @@ function TargetField({
  * one.
  */
 function StorageSection() {
-  const { state, trackers, replaceAll } = useStore()
+  const { state, replaceAll } = useStore()
   const { config, setConfig, autoBusy, autoError } = useRemote()
   const [push, setPush] = useState<ActionState>({ kind: "idle" })
   const [pull, setPull] = useState<ActionState>({ kind: "idle" })
@@ -378,8 +378,8 @@ function StorageSection() {
 
   // Sets and readings travel as one list of samples — see lib/samples.ts.
   const items = useMemo(
-    () => syncablesOf(state.sets, state.foods, state.readings, trackers),
-    [state.sets, state.foods, state.readings, trackers],
+    () => syncablesOf(state.sets, state.foods, state.readings, state.trackers),
+    [state.sets, state.foods, state.readings, state.trackers],
   )
   const plan = useMemo(() => planPush(config, items), [config, items])
 
@@ -393,7 +393,7 @@ function StorageSection() {
 
   const doPull = async () => {
     setPull({ kind: "busy" })
-    const res = await pullLog(config, trackers)
+    const res = await pullLog(config, state.trackers)
     if (!res.ok) return setPull({ kind: "error", message: res.error })
     replaceAll(applyPull(state, res.value))
     setConfig(res.value.config)

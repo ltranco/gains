@@ -2,7 +2,7 @@ import { toDayKey } from "./date"
 import { MACROS, type MacroKey } from "./food"
 import { exerciseForPrefix, parseMetric, type Measure } from "./samples"
 import { newId } from "./store"
-import { allTrackers, recoveredTracker } from "./trackers"
+import { recoveredTracker } from "./trackers"
 import type { FoodEntry, Reading, SetEntry, Tracker, TrackerUnit } from "./types"
 
 /**
@@ -42,10 +42,10 @@ interface ExportLine {
 }
 
 /**
- * @param trackers the trackers this device knows about. Defaults to the builtins, which is what
- * a fresh install has; anything beyond them is recovered and reported.
+ * @param trackers the metrics this device knows about. Defaults to none, which is what a fresh
+ * install has; anything the export names beyond them is rebuilt and reported.
  */
-export function reconstruct(jsonl: string, trackers: Tracker[] = allTrackers([])): ReconstructResult {
+export function reconstruct(jsonl: string, trackers: Tracker[] = []): ReconstructResult {
   // prefix -> timestamp(ms) -> measure -> value, for exercises
   const grouped = new Map<string, Map<number, Partial<Record<Measure, number>>>>()
   // timestamp(ms) -> macro -> value. Food is joined on the timestamp alone, since its four

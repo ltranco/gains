@@ -12,15 +12,12 @@ import {
 
 import { instantOn } from "@/lib/date"
 import { EMPTY_STATE, newId, readState, STORAGE_KEY, parseState, writeState } from "@/lib/store"
-import { allTrackers } from "@/lib/trackers"
 import type { FoodEntry, GainsState, Prefs, Reading, SetEntry, Tracker } from "@/lib/types"
 
 interface StoreApi {
   state: GainsState
   /** False until localStorage has been read on the client. Guards SSR/first-paint mismatch. */
   hydrated: boolean
-  /** Builtins with stored overrides applied, then custom ones. What every screen reads. */
-  trackers: Tracker[]
   addSet: (set: Omit<SetEntry, "id" | "loggedAt">) => void
   updateSet: (id: string, patch: Partial<Omit<SetEntry, "id">>) => void
   deleteSet: (id: string) => void
@@ -220,13 +217,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const replaceAll = useCallback((next: GainsState) => setState(next), [])
 
-  const trackers = useMemo(() => allTrackers(state.trackers), [state.trackers])
-
   const api = useMemo<StoreApi>(
     () => ({
       state,
       hydrated,
-      trackers,
       addSet,
       updateSet,
       deleteSet,
@@ -250,7 +244,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [
       state,
       hydrated,
-      trackers,
       addSet,
       updateSet,
       deleteSet,

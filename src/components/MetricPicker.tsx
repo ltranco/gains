@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react"
 
+import Link from "next/link"
+
 import { searchTrackers } from "@/lib/trackers"
 import type { Tracker, UnitSystem } from "@/lib/types"
 import { trackerUnit } from "@/lib/units"
@@ -93,6 +95,23 @@ export function MetricPicker({
               ))}
             </ul>
           )
+        ) : trackers.length === 0 ? (
+          // Nothing ships with the app, so the first visit here is empty by design.
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <p className="text-[14px]" style={{ color: "var(--text-muted)" }}>
+              No metrics yet
+            </p>
+            <p className="mt-1 max-w-[240px] text-[13px]" style={{ color: "var(--text-faint)" }}>
+              A waist measurement, a supplement dose — anything you log as one number.
+            </p>
+            <Link
+              href="/settings/metrics"
+              className="mt-4 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+              style={{ borderColor: "var(--border-strong)" }}
+            >
+              Add one
+            </Link>
+          </div>
         ) : (
           <ul>
             {trackers.map((t) => (

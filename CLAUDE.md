@@ -40,7 +40,7 @@ Node 20.
 | `src/lib/types.ts` | domain types; `SetEntry`, `FoodEntry`, `Reading`, `Tracker`, `Prefs` |
 | `src/lib/catalog.ts` | the exercise catalog — movement × equipment, curated by hand |
 | `src/lib/food.ts` | the four macros, and what a logged food is |
-| `src/lib/trackers.ts` | the metric catalog — waist, plus whatever you add |
+| `src/lib/trackers.ts` | metrics: slug validation, search, rebuild-from-remote. No catalog — they're all yours |
 | `src/lib/store.ts` | localStorage read/write, versioned; remote config under its own key |
 | `src/lib/select.ts` | derived views: day grouping, prefill lookup, recents, records, ring progress |
 | `src/lib/samples.ts` | the wire format all three kinds of entry go through — `Syncable` |
@@ -117,21 +117,27 @@ Node 20.
     would tombstone a HealthKit sample. `weight`, `step` and `ingest` are reserved slugs and
     `validateTrackerName` refuses them, alongside the four macro names.
 
-12. **A metric's slug and unit are frozen at creation; its name and target are not.** The slug is
+12. **No metric ships with the app.** Waist did for a while, so the list wouldn't be empty on
+    first run, and it cost a two-tier system — a shadowing merge rule and a can't-be-removed
+    exception — to privilege one circumference over thigh and neck for no defensible reason. Macros
+    are in code because they need special handling; a circumference needs none. The list starts
+    empty and every row in it is data.
+
+13. **A metric's slug and unit are frozen at creation; its name and target are not.** The slug is
     the metric prefix and the unit is the suffix, so together they *are* the series name. Renaming
     is free — which is also why a food's name is absent from its fingerprint, so retitling a meal
     costs nothing. Changing a slug or a unit would orphan every sample already stored.
 
-13. **Macro targets live in `Prefs`, not in the log.** They're a preference: nothing is recorded
+14. **Macro targets live in `Prefs`, not in the log.** They're a preference: nothing is recorded
     when you change one, and no target means that ring simply isn't drawn. An arc is a fraction of
     something.
 
-14. **The day view has one row grammar, used three times.** Exercise sets, food and metrics are
+15. **The day view has one row grammar, used three times.** Exercise sets, food and metrics are
     each a section with a heading and rows of *time, name, value, duplicate, delete*, and the row
     itself opens the editor. Three kinds of thing are logged here and there is exactly one way to
     read a row back — don't invent a fourth layout for the next one.
 
-15. **A record is a record at the moment it was logged**, for both sets and metrics, so old ones
+16. **A record is a record at the moment it was logged**, for both sets and metrics, so old ones
     stay badged and the day reads as a history of when you moved the needle. A metric's direction
     is `better: "higher" | "lower"`, and *absent* is a real answer: a creatine dose is not a
     personal best, and a PR badge on every entry is noise.
@@ -286,7 +292,7 @@ would have caught the last thing that broke in that file.
 | `date.test.ts` | UTC day drift, `loggedAt` ignoring the selected day, DST either side, 24-hour stamps |
 | `units.test.ts` | imperial display corrupting stored kg or cm, comma grouping breaking re-parse, a blank field parsing as zero |
 | `catalog.test.ts` | duplicate metric prefixes, kind misclassification, fuzzy ranking |
-| `trackers.test.ts` | one metric name producible two ways, HealthKit's or a macro's slug being claimed, a rename moving a slug |
+| `trackers.test.ts` | one metric name producible two ways, HealthKit's or a macro's slug being claimed, a rename moving a slug, rebuild-from-remote |
 | `food.test.ts` | a row summary that bleeds, sum-vs-day totals, a ring drawn with no target |
 | `samples.test.ts` | wrong measures per kind, colliding timestamps tearing a meal in half, `health_weight` being mistaken for ours, round trip through export for all three kinds |
 | `store.test.ts` | a field saved but not parsed back (this is what silently emptied "Read from"), a v1 document losing its sets, an old single-prefix push record being dropped |
