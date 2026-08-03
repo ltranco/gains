@@ -19,6 +19,10 @@ import { DateTimeField, NumberField, TextField } from "./NumberField"
  * A blank macro is stored as 0 rather than refused. You are copying a label, and a blank on a
  * label means none. Calories are the one field worth insisting on: a food with no calories is not
  * a food you were trying to record.
+ *
+ * Nothing is focused on open, unlike the single-field sheets. Five fields plus a keyboard is more
+ * than fits, and raising it before you've said which field you want covered the four you probably
+ * did want.
  */
 
 type Draft = Record<MacroKey, string> & { name: string; at: string }
@@ -143,7 +147,6 @@ export function FoodSheet({
           onChange={set("name")}
           placeholder="Chicken bowl"
           freeText
-          autoFocus
         />
 
         {MACROS.map((macro) => (

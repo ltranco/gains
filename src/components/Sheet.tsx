@@ -9,8 +9,19 @@ import { Close } from "./icons"
  *
  * iOS Safari doesn't shrink the layout viewport when the keyboard opens; it overlays it and
  * scrolls. `100dvh` therefore stays full-screen height, so a bottom-anchored sheet gets pushed
- * up until its own header — the search field — is above the top of the screen. Sizing to
- * `visualViewport` instead is the only reliable fix.
+ * up until its own header is above the top of the screen. Sizing to `visualViewport` instead is
+ * the fix where `interactive-widget=resizes-content` isn't supported.
+ *
+ * ## Why the resync exists
+ *
+ * Dismissing the keyboard left the sheet stranded: mispositioned, and no amount of tapping
+ * brought it back. iOS does not reliably fire a final `resize` once the keyboard has finished
+ * retracting — the last event it does fire carries a mid-animation `offsetTop`, and with the body
+ * scroll-locked nothing afterwards nudges it. The stale offset then *is* the layout, permanently.
+ *
+ * So every signal schedules a few follow-up reads across the animation, and focus changes inside
+ * the sheet count as signals. Reading the same value four times is free; reading it once and
+ * being wrong is unrecoverable.
  */
 function useVisualViewport(active: boolean) {
   const [rect, setRect] = useState<{ height: number; offsetTop: number } | null>(null)
@@ -20,13 +31,38 @@ function useVisualViewport(active: boolean) {
     const vv = window.visualViewport
     if (!vv) return
 
-    const update = () => setRect({ height: vv.height, offsetTop: vv.offsetTop })
+    const timers: number[] = []
+    const read = () =>
+      setRect({
+        height: vv.height,
+        // Never negative. A mid-animation offset can come back below zero, which translated the
+        // whole dialog off the top of the screen.
+        offsetTop: Math.max(0, vv.offsetTop),
+      })
+
+    const update = () => {
+      read()
+      // The keyboard animates for roughly a quarter of a second; catch it having settled.
+      for (const t of timers.splice(0)) clearTimeout(t)
+      for (const delay of [60, 200, 400]) timers.push(window.setTimeout(read, delay))
+    }
+
     update()
     vv.addEventListener("resize", update)
     vv.addEventListener("scroll", update)
+    // A field losing focus is how the keyboard usually goes away, and it is the one signal that
+    // arrives reliably when the resize event doesn't.
+    window.addEventListener("focusin", update)
+    window.addEventListener("focusout", update)
+    window.addEventListener("orientationchange", update)
+
     return () => {
+      for (const t of timers) clearTimeout(t)
       vv.removeEventListener("resize", update)
       vv.removeEventListener("scroll", update)
+      window.removeEventListener("focusin", update)
+      window.removeEventListener("focusout", update)
+      window.removeEventListener("orientationchange", update)
       setRect(null)
     }
   }, [active])

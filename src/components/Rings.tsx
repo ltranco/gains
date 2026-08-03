@@ -30,6 +30,12 @@ import { formatCount } from "@/lib/units"
  */
 const SIZE = 60
 const STROKE = 10
+/**
+ * The empty part of the dial is drawn thinner than the filled part. Matching widths made the track
+ * read as a second ring rather than as the space the first one has left to travel; slimmer, it
+ * recedes and the progress is the only thing with weight.
+ */
+const TRACK = 6
 
 /** Ring hue per macro. Fixed, so calories are always the same colour as yesterday. */
 const HUE: Record<MacroKey, string> = {
@@ -171,7 +177,7 @@ function Arc({
           r={r}
           fill="none"
           stroke="var(--ring-track)"
-          strokeWidth={STROKE}
+          strokeWidth={TRACK}
         />
         <circle
           className="ring-arc"

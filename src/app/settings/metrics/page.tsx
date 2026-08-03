@@ -161,7 +161,7 @@ function TrackerEditor({
           }}
           autoCapitalize="words"
           autoCorrect="off"
-          className="w-full rounded-lg border px-2.5 py-2 text-[14px] outline-none focus:border-[var(--accent)]"
+          className="w-full max-w-[280px] rounded-lg border px-2.5 py-2 text-[14px] outline-none focus:border-[var(--accent)]"
           style={{ background: "var(--bg-subtle)" }}
         />
       </Labelled>
@@ -277,7 +277,7 @@ function NewTracker({
           autoCapitalize="words"
           autoCorrect="off"
           autoFocus
-          className="w-full rounded-lg border px-2.5 py-2 text-[14px] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+          className="w-full max-w-[280px] rounded-lg border px-2.5 py-2 text-[14px] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
           style={{ background: "var(--bg-subtle)" }}
         />
       </Labelled>
@@ -333,9 +333,10 @@ function Labelled({
   hint?: string
   children: React.ReactNode
 }) {
+  // `items-start` so a segmented control is as wide as its options, not as wide as the page.
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-baseline justify-between gap-2">
+    <div className="flex flex-col items-start gap-1">
+      <div className="flex w-full items-baseline justify-between gap-2">
         <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
           {label}
         </span>

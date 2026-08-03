@@ -36,6 +36,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Lets the sticky action bar sit against the home indicator instead of above a letterbox.
   viewportFit: "cover",
+  /**
+   * Make the on-screen keyboard shrink the layout viewport, so `100dvh` means the part of the
+   * screen you can actually see and a bottom-anchored sheet is never pushed off the top.
+   *
+   * Where a browser supports this, `Sheet`'s visualViewport tracking has nothing left to correct.
+   * Where it doesn't, the key is ignored and that tracking is still the fix. Belt and braces on
+   * purpose: the JS path is the one that got stuck.
+   */
+  interactiveWidget: "resizes-content",
   // Follows whichever theme is active, so the iOS status bar matches the page.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },

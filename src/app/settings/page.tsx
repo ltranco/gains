@@ -147,10 +147,16 @@ function AppearanceSection() {
   )
 }
 
-/** Label above its control, so a segmented group that outgrows the row still fits. */
+/**
+ * Label above its control, so a segmented group that outgrows the row still fits.
+ *
+ * `items-start` is load-bearing: a flex column stretches its children by default, which made every
+ * segmented control span the full width and turned three small switches into three full-width bars.
+ * A two-option toggle should be two options wide.
+ */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col items-start gap-1.5">
       <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
         {label}
       </span>
@@ -285,7 +291,9 @@ function MacroSection() {
 
   return (
     <Section label="Daily targets">
-      <div className="flex gap-2">
+      {/* Fixed columns rather than four stretched ones, so the row is as wide as the numbers it
+          holds. Same reason the segmented controls aren't full width. */}
+      <div className="flex flex-wrap gap-2">
         {MACROS.map((macro) => (
           <TargetField
             key={macro.key}
@@ -327,7 +335,7 @@ function TargetField({
   }
 
   return (
-    <label className="flex min-w-0 flex-1 flex-col gap-1">
+    <label className="flex w-[76px] flex-col gap-1">
       <span className="truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
         {label}
       </span>

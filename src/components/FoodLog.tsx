@@ -13,13 +13,16 @@ import { Duplicate, Plus, Trash } from "./icons"
  * One section rather than one per food. An exercise block groups the sets of *that* movement, and
  * the parallel for eating is not "one block per dish" — it's the meals of the day, in order.
  *
- * ## Keeping the numbers on the row
+ * ## Two lines, not one
  *
- * The value is `48P 61C 22F 620kcal`, which is a lot of characters to fit beside a name and a clock
- * on a 390px screen. Three things stop it bleeding: the macro string is `shrink-0` so it never
- * compresses, the name is the only flexible column and truncates, and the macros sit in the quiet
- * mono face a size down. The name is what loses characters, because a clipped "Chicken bo…" is still
- * legible where a clipped "48P 61C 22F 620kc" is not.
+ * `48P 61C 22F 620kcal` beside a name and a clock fits on a 390px screen, but only just, and it read
+ * as cramped — the name had barely a third of the row and truncated on anything longer than "Chicken
+ * bowl". So the macros drop to their own line under the name, which gives the name the full width and
+ * gives the numbers room to be read rather than squinted at.
+ *
+ * Everything is top-aligned: the clock and the two action buttons sit against the first line, so a
+ * two-line row still scans as one row with a hanging detail rather than as a block that has drifted
+ * out of the column.
  */
 export function FoodLog({
   foods,
@@ -73,25 +76,27 @@ export function FoodLog({
         {foods.map((food) => (
           <li
             key={food.id}
-            className="flex items-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
+            className="flex items-start rounded-md transition-colors hover:bg-[var(--bg-hover)]"
           >
             <button
               type="button"
               onClick={() => onEdit(food)}
-              className="flex min-w-0 flex-1 items-baseline gap-2.5 py-2 pl-1 text-left"
+              className="flex min-w-0 flex-1 items-start gap-2.5 py-2 pl-1 text-left"
             >
               <span
-                className="nums-quiet shrink-0 text-[12px]"
+                className="nums-quiet shrink-0 text-[12px] leading-[1.45]"
                 style={{ color: "var(--text-faint)" }}
               >
                 {formatTime(food.loggedAt, clock) ?? "--:--"}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[15px]">{foodName(food)}</span>
-              <span
-                className="nums-quiet shrink-0 text-[11px]"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {summariseFood(food)}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] leading-tight">{foodName(food)}</span>
+                <span
+                  className="nums-quiet mt-1 block truncate text-[12px]"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {summariseFood(food)}
+                </span>
               </span>
             </button>
 
