@@ -156,6 +156,11 @@ function RingCell({
  *
  * Over target draws a second lap on top, the way Activity does — capping at full would make 3,000
  * kcal against a 2,000 target look exactly like hitting it.
+ *
+ * The completed lap *dims* when a second one starts. Drawing the overflow at partial alpha in the
+ * same hue was the obvious thing and it was invisible: a translucent orange arc laid over an
+ * opaque orange arc is just orange. Fading the lap underneath is what makes the overflow read as a
+ * separate pass rather than a slightly thicker ring.
  */
 function Arc({
   fraction,
@@ -201,6 +206,7 @@ function Arc({
           strokeLinecap={first > 0.001 ? "round" : "butt"}
           strokeDasharray={c}
           strokeDashoffset={armed ? c * (1 - first) : c}
+          opacity={second > 0 ? 0.32 : 1}
           style={{ transitionDelay: `${delay}ms` }}
         />
         {second > 0 && (
@@ -215,10 +221,7 @@ function Arc({
             strokeLinecap="round"
             strokeDasharray={c}
             strokeDashoffset={armed ? c * (1 - second) : c}
-            // Lighter than the lap beneath it, so the overlap reads as a second pass rather
-            // than as one thicker ring.
-            opacity={0.5}
-            style={{ transitionDelay: `${delay + 220}ms` }}
+            style={{ transitionDelay: `${delay + 240}ms` }}
           />
         )}
       </g>
