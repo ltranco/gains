@@ -87,7 +87,7 @@ export default function Metrics() {
 
         {state.trackers.length === 0 && !adding && (
           <p className="text-[13px]" style={{ color: "var(--text-faint)" }}>
-            Nothing yet. A waist measurement, a supplement dose — anything you log as one number.
+            Nothing yet — a waist measurement, a supplement dose, anything you log as one number
           </p>
         )}
 
@@ -211,13 +211,13 @@ function TrackerEditor({
 
       {/* Which way progress runs. "Neither" is the default and gets no badge: a creatine dose is
           not a personal best, and a PR on every entry is noise. */}
-      <Labelled label="Records">
+      <Labelled label="Direction">
         <Segmented<"none" | "higher" | "lower">
           value={tracker.better ?? "none"}
           options={[
             ["none", "Neither"],
-            ["higher", "Higher"],
-            ["lower", "Lower"],
+            ["higher", "Higher better"],
+            ["lower", "Lower better"],
           ]}
           onChange={(next) => {
             if (next === "none") {
@@ -240,7 +240,7 @@ function TrackerEditor({
           Remove
         </button>
         <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-          Deletes its entries here too.
+          Deletes its entries here too
         </span>
       </div>
     </div>

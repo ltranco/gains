@@ -85,7 +85,7 @@ export function MetricPicker({
                 No match for “{query}”
               </p>
               <p className="mt-1 text-[12px]" style={{ color: "var(--text-faint)" }}>
-                Add it in Settings.
+                Add it in Settings
               </p>
             </div>
           ) : (
@@ -102,7 +102,7 @@ export function MetricPicker({
               No metrics yet
             </p>
             <p className="mt-1 max-w-[240px] text-[13px]" style={{ color: "var(--text-faint)" }}>
-              A waist measurement, a supplement dose — anything you log as one number.
+              A waist measurement, a supplement dose, anything you log as one number
             </p>
             <Link
               href="/settings/metrics"
