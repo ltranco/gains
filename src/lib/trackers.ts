@@ -41,7 +41,7 @@ import type { Tracker, TrackerUnit } from "./types"
  * Point, not sum: two waist measurements in a day are one waist, not a bigger one.
  */
 export const BUILTIN_TRACKERS: Tracker[] = [
-  { id: "waist", name: "Waist", unit: "cm", mode: "point" },
+  { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" },
 ]
 
 /** Metric prefixes the exercise catalog already owns, so a tracker can't claim one. */

@@ -5,27 +5,27 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { BottomBar } from "@/components/BottomBar"
 import { DatePicker } from "@/components/DatePicker"
 import { DayLog } from "@/components/DayLog"
-import { DayReadingsLog } from "@/components/DayReadingsLog"
 import { EmptyDay } from "@/components/EmptyDay"
 import { ExercisePicker } from "@/components/ExercisePicker"
 import { FoodLog } from "@/components/FoodLog"
 import { FoodSheet } from "@/components/FoodSheet"
 import { MetricPicker } from "@/components/MetricPicker"
+import { MetricsLog } from "@/components/MetricsLog"
 import { ReadingSheet } from "@/components/ReadingSheet"
 import { Rings } from "@/components/Rings"
 import { SetEntrySheet, summarise } from "@/components/SetEntrySheet"
 import { Toast } from "@/components/Toast"
 import { TopBar } from "@/components/TopBar"
-import { Plus } from "@/components/icons"
 import { isFuture, shiftDay, todayKey } from "@/lib/date"
 import { foodName } from "@/lib/food"
 import {
   dayEntries,
   dayFoods,
+  dayMetricRows,
   dayProgress,
-  dayReadings,
   foodDays,
   loggedDays,
+  metricRecordIds,
   personalRecordIds,
   readingDays,
 } from "@/lib/select"
@@ -44,6 +44,7 @@ export default function Today() {
     duplicateFood,
     deleteFood,
     restoreFood,
+    duplicateReading,
     deleteReading,
     restoreReading,
   } = useStore()
@@ -66,9 +67,13 @@ export default function Today() {
 
   const entries = useMemo(() => dayEntries(state.sets, date), [state.sets, date])
   const foods = useMemo(() => dayFoods(state.foods, date), [state.foods, date])
-  const readings = useMemo(
-    () => dayReadings(state.readings, trackers, date),
+  const metrics = useMemo(
+    () => dayMetricRows(state.readings, trackers, date),
     [state.readings, trackers, date],
+  )
+  const metricRecords = useMemo(
+    () => metricRecordIds(state.readings, trackers),
+    [state.readings, trackers],
   )
   const progress = useMemo(
     () => dayProgress(state.foods, state.prefs.macros, date),
@@ -159,7 +164,7 @@ export default function Today() {
     })
   }
 
-  const nothingLogged = entries.length === 0 && foods.length === 0 && readings.length === 0
+  const nothingLogged = entries.length === 0 && foods.length === 0 && metrics.length === 0
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-[560px] flex-col">
@@ -203,33 +208,19 @@ export default function Today() {
                   onDuplicate={(f) => duplicateFood(f.id)}
                   onDelete={handleDeleteFood}
                 />
-                <DayReadingsLog
-                  groups={readings}
+                <MetricsLog
+                  rows={metrics}
                   units={state.prefs.units}
                   clock={state.prefs.clock}
-                  onAddTo={(tracker) => setReading({ tracker, editing: null })}
+                  records={metricRecords}
+                  onAdd={() => setMetricsOpen(true)}
                   onEdit={(tracker, edited) => setReading({ tracker, editing: edited })}
+                  onDuplicate={(r) => duplicateReading(r.id)}
                   onDelete={handleDeleteReading}
                 />
               </>
             )}
 
-            {/* The door for the things measured weekly. Quiet, small and at the foot of the day
-                rather than in the bottom bar: a waist measurement has not earned a thumb-range
-                button, and a full-width one competed with the two that had. */}
-            {trackers.length > 0 && (
-              <div className="px-3 py-3">
-                <button
-                  type="button"
-                  onClick={() => setMetricsOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[13px] transition-colors hover:bg-[var(--bg-hover)]"
-                  style={{ color: "var(--text-faint)" }}
-                >
-                  <Plus size={14} />
-                  Metric
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -240,6 +231,7 @@ export default function Today() {
         onOpenPicker={() => setDateOpen(true)}
         onAddExercise={openPicker}
         onAddFood={openFood}
+        onAddMetric={() => setMetricsOpen(true)}
       />
 
       <DatePicker

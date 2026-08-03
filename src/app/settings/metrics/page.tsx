@@ -202,6 +202,27 @@ function TrackerEditor({
         />
       </Labelled>
 
+      {/* Which way progress runs. "Neither" is the default and gets no badge: a creatine dose is
+          not a personal best, and a PR on every entry is noise. */}
+      <Labelled label="Records">
+        <Segmented<"none" | "higher" | "lower">
+          value={tracker.better ?? "none"}
+          options={[
+            ["none", "Neither"],
+            ["higher", "Higher"],
+            ["lower", "Lower"],
+          ]}
+          onChange={(next) => {
+            if (next === "none") {
+              const { better: _drop, ...rest } = tracker
+              onSave(rest)
+            } else {
+              onSave({ ...tracker, better: next })
+            }
+          }}
+        />
+      </Labelled>
+
       {!isBuiltin(tracker.id) && (
         <div className="flex items-center gap-2">
           <button

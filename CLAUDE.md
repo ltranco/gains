@@ -42,7 +42,7 @@ Node 20.
 | `src/lib/food.ts` | the four macros, and what a logged food is |
 | `src/lib/trackers.ts` | the metric catalog — waist, plus whatever you add |
 | `src/lib/store.ts` | localStorage read/write, versioned; remote config under its own key |
-| `src/lib/select.ts` | derived views: day grouping, prefill lookup, recents, day totals, ring progress |
+| `src/lib/select.ts` | derived views: day grouping, prefill lookup, recents, records, ring progress |
 | `src/lib/samples.ts` | the wire format all three kinds of entry go through — `Syncable` |
 | `src/lib/units.ts` | SI ↔ display conversion, formatting, parsing |
 | `src/lib/date.ts` | local day keys, day labels, clock formatting |
@@ -125,6 +125,16 @@ Node 20.
 13. **Macro targets live in `Prefs`, not in the log.** They're a preference: nothing is recorded
     when you change one, and no target means that ring simply isn't drawn. An arc is a fraction of
     something.
+
+14. **The day view has one row grammar, used three times.** Exercise sets, food and metrics are
+    each a section with a heading and rows of *time, name, value, duplicate, delete*, and the row
+    itself opens the editor. Three kinds of thing are logged here and there is exactly one way to
+    read a row back — don't invent a fourth layout for the next one.
+
+15. **A record is a record at the moment it was logged**, for both sets and metrics, so old ones
+    stay badged and the day reads as a history of when you moved the needle. A metric's direction
+    is `better: "higher" | "lower"`, and *absent* is a real answer: a creatine dose is not a
+    personal best, and a PR badge on every entry is noise.
 
 ## Storage — bring your own
 
@@ -280,7 +290,7 @@ would have caught the last thing that broke in that file.
 | `food.test.ts` | a row summary that bleeds, sum-vs-day totals, a ring drawn with no target |
 | `samples.test.ts` | wrong measures per kind, colliding timestamps tearing a meal in half, `health_weight` being mistaken for ours, round trip through export for all three kinds |
 | `store.test.ts` | a field saved but not parsed back (this is what silently emptied "Read from"), a v1 document losing its sets, an old single-prefix push record being dropped |
-| `select.test.ts` | personal records, day grouping, sum-vs-point totals, a ring drawn with no target |
+| `select.test.ts` | personal records for sets and for metrics, direction, day grouping, a reading whose metric is gone |
 | `remote.test.ts` | an edited entry looking edited forever, a tombstone landing on the wrong timestamp or missing three of a food's four series, a renamed food costing a retraction, a pull overwriting a local metric definition |
 
 **The TZ is pinned** in the npm script. Several date tests are meaningless at UTC, and CI

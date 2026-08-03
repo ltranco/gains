@@ -40,6 +40,7 @@ interface StoreApi {
   duplicateFood: (id: string) => void
   addReading: (reading: Omit<Reading, "id" | "loggedAt">) => void
   updateReading: (id: string, patch: Partial<Omit<Reading, "id">>) => void
+  duplicateReading: (id: string) => void
   deleteReading: (id: string) => void
   restoreReading: (reading: Reading) => void
   /** Writes a full tracker under its id, shadowing a builtin or replacing a custom one. */
@@ -170,6 +171,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }))
   }, [])
 
+  const duplicateReading = useCallback((id: string) => {
+    setState((s) => {
+      const src = s.readings.find((x) => x.id === id)
+      if (!src) return s
+      return {
+        ...s,
+        readings: [...s.readings, { ...src, id: newId(), loggedAt: instantOn(src.date) }],
+      }
+    })
+  }, [])
+
   const deleteReading = useCallback((id: string) => {
     setState((s) => ({ ...s, readings: s.readings.filter((x) => x.id !== id) }))
   }, [])
@@ -227,6 +239,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       duplicateFood,
       addReading,
       updateReading,
+      duplicateReading,
       deleteReading,
       restoreReading,
       saveTracker,
@@ -250,6 +263,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       duplicateFood,
       addReading,
       updateReading,
+      duplicateReading,
       deleteReading,
       restoreReading,
       saveTracker,

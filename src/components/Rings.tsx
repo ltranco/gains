@@ -23,8 +23,13 @@ import { formatCount } from "@/lib/units"
  * make two of the rings indistinguishable to a red-green colourblind reader.
  */
 
-const SIZE = 58
-const STROKE = 6
+/**
+ * Stroke is deliberately ~1/6 of the diameter. A thin ring reads as a progress bar bent into a
+ * circle; the Activity look comes from a band thick enough to have a face, with just enough hole
+ * left for the number.
+ */
+const SIZE = 60
+const STROKE = 10
 
 /** Ring hue per macro. Fixed, so calories are always the same colour as yesterday. */
 const HUE: Record<MacroKey, string> = {
@@ -96,22 +101,30 @@ function RingCell({
           armed={armed}
           delay={index * 80}
         />
-        {/* Inside the ring, always — it's the number you came for. Sized down past four digits
-            so 2,900 kcal doesn't touch the stroke. */}
+        {/* Inside the ring, always — it's the number you came for. In the ring's own hue rather
+            than the text colour: it names which arc it belongs to without a second label, and the
+            thick stroke around it carries the contrast the small type can't. Sized down past four
+            digits so 2,900 doesn't touch the band. */}
         <span
           className="nums absolute"
-          style={{ fontSize: total >= 1000 ? 12 : 14, letterSpacing: "-0.04em" }}
+          style={{
+            fontSize: total >= 1000 ? 11 : 13,
+            letterSpacing: "-0.04em",
+            color: HUE[macro.key],
+          }}
         >
           {formatCount(total)}
         </span>
       </span>
 
-      <span className="flex min-w-0 flex-col items-center leading-tight">
-        <span className="max-w-full truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+      {/* Name and target on one line, so the block is a ring plus a caption rather than three
+          stacked rows. */}
+      <span className="flex max-w-full items-baseline gap-1 truncate">
+        <span className="truncate text-[10px]" style={{ color: "var(--text-muted)" }}>
           {macro.label}
         </span>
-        <span className="nums-quiet text-[10px]" style={{ color: "var(--text-faint)" }}>
-          / {formatCount(target)}
+        <span className="nums-quiet shrink-0 text-[9px]" style={{ color: "var(--text-faint)" }}>
+          /{formatCount(target)}
         </span>
       </span>
     </button>
@@ -187,7 +200,12 @@ function Arc({
             strokeLinecap="round"
             strokeDasharray={c}
             strokeDashoffset={armed ? c * (1 - second) : c}
-            style={{ transitionDelay: `${delay + 240}ms` }}
+            style={{
+              transitionDelay: `${delay + 240}ms`,
+              // The shadow is what sells it. Tint alone reads as a two-tone ring; a cast shadow
+              // reads as one band physically lying over another and wrapping round behind it.
+              filter: "drop-shadow(0 0 1.5px rgba(0,0,0,0.45))",
+            }}
           />
         )}
       </g>

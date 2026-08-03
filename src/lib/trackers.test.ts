@@ -123,7 +123,7 @@ describe("the slug never moves", () => {
 describe("builtins and stored trackers", () => {
   it("lets a stored copy shadow a builtin without duplicating it", () => {
     const merged = allTrackers([
-      { id: "waist", name: "Waistline", unit: "cm", mode: "point", target: 80 },
+      { id: "waist", name: "Waistline", unit: "cm", mode: "point", target: 80, better: "lower" },
     ])
     expect(merged.filter((t) => t.id === "waist")).toHaveLength(1)
     expect(merged.find((t) => t.id === "waist")?.target).toBe(80)

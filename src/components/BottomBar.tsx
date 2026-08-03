@@ -1,7 +1,9 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
+
 import { formatDayLabel, isFuture, shiftDay } from "@/lib/date"
-import { Apple, Barbell, ChevronLeft, ChevronRight } from "./icons"
+import { Apple, Barbell, ChevronLeft, ChevronRight, ChevronUp } from "./icons"
 
 /**
  * Everything you touch mid-session, docked to the bottom edge — on a phone this is the only
@@ -13,8 +15,10 @@ import { Apple, Barbell, ChevronLeft, ChevronRight } from "./icons"
  *
  * Two add buttons, not one with a menu. Exercise and food are both logged several times a day,
  * so making either of them a second tap behind a chooser taxes the two things this app is for.
- * Anything logged weekly — a waist measurement — does not earn a slot here; it's a section down
- * inside the food picker, findable by search.
+ *
+ * Anything logged weekly hangs off the caret on the Food button instead. A metric earns a door,
+ * not a slot: it was briefly a row at the foot of the day, which was one more thing on screen at
+ * all times for something touched once a week.
  */
 export function BottomBar({
   date,
@@ -22,12 +26,14 @@ export function BottomBar({
   onOpenPicker,
   onAddExercise,
   onAddFood,
+  onAddMetric,
 }: {
   date: string
   onStep: (days: number) => void
   onOpenPicker: () => void
   onAddExercise: () => void
   onAddFood: () => void
+  onAddMetric: () => void
 }) {
   return (
     <div
@@ -63,9 +69,7 @@ export function BottomBar({
         <AddButton label="Exercise" onClick={onAddExercise}>
           <Barbell size={17} />
         </AddButton>
-        <AddButton label="Food" onClick={onAddFood}>
-          <Apple size={17} />
-        </AddButton>
+        <FoodButton onAddFood={onAddFood} onAddMetric={onAddMetric} />
       </div>
     </div>
   )
@@ -91,6 +95,94 @@ function AddButton({
       {children}
       {label}
     </button>
+  )
+}
+
+/**
+ * Food, with a caret on its left for the things you log rarely.
+ *
+ * A real button rather than a long-press: this is a responsive site, so every action has to work
+ * with a finger, a mouse and a keyboard. The menu closes on Escape, on a click anywhere outside it,
+ * and on choosing something.
+ */
+function FoodButton({
+  onAddFood,
+  onAddMetric,
+}: {
+  onAddFood: () => void
+  onAddMetric: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrap = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    const onDown = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    document.addEventListener("mousedown", onDown)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      document.removeEventListener("mousedown", onDown)
+    }
+  }, [open])
+
+  return (
+    <div ref={wrap} className="relative flex flex-1">
+      <div
+        className="flex flex-1 overflow-hidden rounded-lg"
+        style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="More to log"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="flex w-10 shrink-0 items-center justify-center transition-colors"
+          // A hairline of the button's own text colour, so the split reads without a second hue.
+          style={{
+            borderRight: "1px solid color-mix(in srgb, var(--accent-text) 25%, transparent)",
+            background: open ? "rgba(0,0,0,0.14)" : undefined,
+          }}
+        >
+          <ChevronUp size={16} />
+        </button>
+
+        <button
+          type="button"
+          onClick={onAddFood}
+          className="flex flex-1 items-center justify-center gap-1.5 py-3 text-[15px] font-semibold"
+        >
+          <Apple size={17} />
+          Food
+        </button>
+      </div>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 bottom-full z-30 mb-2 min-w-[160px] overflow-hidden rounded-lg border"
+          style={{ background: "var(--bg-elevated)", boxShadow: "var(--shadow-pop)" }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onAddMetric()
+            }}
+            className="block w-full px-3.5 py-2.5 text-left text-[14px] transition-colors hover:bg-[var(--bg-hover)]"
+          >
+            Metric
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 

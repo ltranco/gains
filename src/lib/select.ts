@@ -76,38 +76,70 @@ export function loggedDays(all: SetEntry[]): string[] {
 
 /* ── Readings ────────────────────────────────────────────────────────────────── */
 
-export interface DayReadings {
+export interface MetricRow {
+  reading: Reading
   tracker: Tracker
-  /** That day's readings, oldest first. */
-  readings: Reading[]
-  /** The day's one number: a sum, or the latest reading. See `Tracker.mode`. */
-  total: number
+}
+
+/** Chronological across days, for anything keyed by `date` + `loggedAt`. */
+const byInstant = (a: { date: string; loggedAt: string }, b: { date: string; loggedAt: string }) =>
+  `${a.date}T${a.loggedAt}`.localeCompare(`${b.date}T${b.loggedAt}`)
+
+/**
+ * A day's readings as one flat list, oldest first — the same shape the food section takes.
+ *
+ * Flat rather than grouped by metric. Grouping made sense when four macros were metrics and each
+ * had several entries a day; what's left is a handful of things measured once, and a heading per
+ * row is all heading and no rows.
+ *
+ * A reading whose metric no longer exists is dropped rather than shown as a bare number: without
+ * the definition there is no name, no unit and no way to say what it measured.
+ */
+export function dayMetricRows(all: Reading[], trackers: Tracker[], date: string): MetricRow[] {
+  const byId = new Map(trackers.map((t) => [t.id, t]))
+  return all
+    .filter((r) => r.date === date)
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+    .flatMap((reading) => {
+      const tracker = byId.get(reading.trackerId)
+      return tracker ? [{ reading, tracker }] : []
+    })
 }
 
 /**
- * A day's readings grouped by tracker, in the trackers' own order rather than the order they
- * were logged.
+ * Ids of readings that were a record *at the moment they were logged*, so old records stay marked
+ * and the day reads as a history of when you moved the needle.
  *
- * This is the opposite call from `dayEntries`, on purpose. Exercises read as a session — the
- * order you did them in is information. Calories and protein are four fixed slots you fill in
- * any order, and having them jump around between days makes the block unreadable at a glance.
+ * Direction comes from the metric: a smaller waist is progress, a bigger lift is. A metric with no
+ * direction gets no badge — a creatine dose is not a personal best, and a badge on every one would
+ * be noise. The first reading of a metric is never marked; it beats nothing.
+ *
+ * Same rule as `personalRecordIds` for sets, deliberately: two different answers to "is this a
+ * record" would be one too many.
  */
-export function dayReadings(
-  all: Reading[],
-  trackers: Tracker[],
-  date: string,
-): DayReadings[] {
-  const ofDay = all
-    .filter((r) => r.date === date)
-    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
-
-  const out: DayReadings[] = []
-  for (const tracker of trackers) {
-    const readings = ofDay.filter((r) => r.trackerId === tracker.id)
-    if (readings.length === 0) continue
-    out.push({ tracker, readings, total: collapse(readings, tracker) })
+export function metricRecordIds(all: Reading[], trackers: Tracker[]): Set<string> {
+  const byId = new Map(trackers.map((t) => [t.id, t]))
+  const byTracker = new Map<string, Reading[]>()
+  for (const r of all) {
+    const bucket = byTracker.get(r.trackerId)
+    if (bucket) bucket.push(r)
+    else byTracker.set(r.trackerId, [r])
   }
-  return out
+
+  const records = new Set<string>()
+  for (const [trackerId, readings] of byTracker) {
+    const tracker = byId.get(trackerId)
+    if (!tracker?.better) continue
+    const improves = (value: number, best: number) =>
+      tracker.better === "higher" ? value > best : value < best
+
+    let best: number | null = null
+    for (const reading of [...readings].sort(byInstant)) {
+      if (best !== null && improves(reading.value, best)) records.add(reading.id)
+      if (best === null || improves(reading.value, best)) best = reading.value
+    }
+  }
+  return records
 }
 
 /**

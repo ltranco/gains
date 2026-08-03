@@ -161,6 +161,7 @@ function asTracker(v: unknown): Tracker[] {
       unit: t.unit as TrackerUnit,
       mode: t.mode === "point" ? "point" : "sum",
       ...(typeof t.target === "number" && Number.isFinite(t.target) ? { target: t.target } : {}),
+      ...(t.better === "higher" || t.better === "lower" ? { better: t.better } : {}),
       ...(t.recovered === true ? { recovered: true } : {}),
     },
   ]

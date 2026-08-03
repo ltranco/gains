@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import { prefixesOf, syncSet, syncSets } from "./samples"
-import { dayEntries, personalRecordIds } from "./select"
+import { dayEntries, dayMetricRows, metricRecordIds, personalRecordIds } from "./select"
 import { planPush } from "./remote"
-import type { RemoteConfig, SetEntry } from "./types"
+import type { Reading, RemoteConfig, SetEntry, Tracker } from "./types"
 
 let n = 0
 const set = (exerciseId: string, date: string, time: string, rest: Partial<SetEntry>): SetEntry => ({
@@ -208,3 +208,88 @@ describe("an edit repairs itself on the next push", () => {
   })
 })
 
+
+describe("a day's metrics", () => {
+  const WAIST: Tracker = { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" }
+  const CREATINE: Tracker = { id: "creatine", name: "Creatine", unit: "g", mode: "sum" }
+
+  const r = (trackerId: string, date: string, time: string, value: number): Reading => ({
+    id: `${trackerId}-${date}-${time}`,
+    trackerId,
+    date,
+    loggedAt: `${date}T${time}.000Z`,
+    value,
+  })
+
+  it("lists a day flat, oldest first, whatever metric each row is", () => {
+    const rows = dayMetricRows(
+      [
+        r("creatine", "2026-08-02", "20:00:00", 5),
+        r("waist", "2026-08-02", "07:00:00", 81),
+        r("waist", "2026-08-01", "07:00:00", 82),
+      ],
+      [WAIST, CREATINE],
+      "2026-08-02",
+    )
+    expect(rows.map((x) => x.tracker.id)).toEqual(["waist", "creatine"])
+  })
+
+  it("drops a reading whose metric is gone rather than showing a bare number", () => {
+    // Without the definition there is no name, no unit, and no way to say what it measured.
+    const rows = dayMetricRows([r("gone", "2026-08-02", "07:00:00", 5)], [WAIST], "2026-08-02")
+    expect(rows).toEqual([])
+  })
+})
+
+describe("metric records", () => {
+  const WAIST: Tracker = { id: "waist", name: "Waist", unit: "cm", mode: "point", better: "lower" }
+  const GRIP: Tracker = { id: "grip", name: "Grip", unit: "count", mode: "point", better: "higher" }
+  const CREATINE: Tracker = { id: "creatine", name: "Creatine", unit: "g", mode: "sum" }
+
+  const r = (trackerId: string, date: string, value: number): Reading => ({
+    id: `${trackerId}-${date}`,
+    trackerId,
+    date,
+    loggedAt: `${date}T07:00:00.000Z`,
+    value,
+  })
+
+  it("marks a smaller waist and ignores a bigger one", () => {
+    const ids = metricRecordIds(
+      [
+        r("waist", "2026-07-01", 84),
+        r("waist", "2026-07-08", 83),
+        r("waist", "2026-07-15", 83.5),
+        r("waist", "2026-07-22", 82),
+      ],
+      [WAIST],
+    )
+    // The first beats nothing, so it is never marked — same rule as a set's first entry.
+    expect([...ids].sort()).toEqual(["waist-2026-07-08", "waist-2026-07-22"])
+  })
+
+  it("runs the other way for a metric where higher is progress", () => {
+    const ids = metricRecordIds(
+      [r("grip", "2026-07-01", 40), r("grip", "2026-07-08", 45), r("grip", "2026-07-15", 42)],
+      [GRIP],
+    )
+    expect([...ids]).toEqual(["grip-2026-07-08"])
+  })
+
+  it("badges nothing when the metric has no direction", () => {
+    // A creatine dose is not a personal best, and a badge on every entry is noise.
+    const ids = metricRecordIds([r("creatine", "2026-07-01", 5), r("creatine", "2026-07-02", 10)], [
+      CREATINE,
+    ])
+    expect(ids.size).toBe(0)
+  })
+
+  it("respects chronology over insertion order, and keeps metrics independent", () => {
+    const ids = metricRecordIds(
+      [r("waist", "2026-07-22", 84), r("waist", "2026-07-01", 80), r("grip", "2026-07-22", 50)],
+      [WAIST, GRIP],
+    )
+    // The later waist reading is bigger, so nothing is a record; grip's first beats nothing.
+    expect(ids.size).toBe(0)
+  })
+})

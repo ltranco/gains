@@ -10,14 +10,14 @@ import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accen
 import { formatStamp, todayKey } from "@/lib/date"
 import { applyPull, planPush, pullLog, pushLog } from "@/lib/remote"
 import { syncablesOf } from "@/lib/samples"
-import { parseState } from "@/lib/store"
+import { DEFAULT_PREFS, parseState } from "@/lib/store"
 import { MACROS } from "@/lib/food"
 import type { ClockFormat, ThemeChoice, Tracker, UnitSystem } from "@/lib/types"
 import { useRemote } from "@/providers/RemoteProvider"
 import { useStore } from "@/providers/StoreProvider"
 
 export default function Settings() {
-  const { state, hydrated, setPrefs, replaceAll } = useStore()
+  const { state, replaceAll } = useStore()
   const fileRef = useRef<HTMLInputElement>(null)
   const [fileStatus, setFileStatus] = useState<string | null>(null)
 
@@ -53,50 +53,11 @@ export default function Settings() {
       <SubPageBar title="Settings" />
 
       <div className="flex flex-col">
-        <Section label="Theme">
-          <Segmented<ThemeChoice>
-            value={hydrated ? state.prefs.theme : "system"}
-            options={[
-              ["system", "System"],
-              ["light", "Light"],
-              ["dark", "Dark"],
-            ]}
-            onChange={(theme) => setPrefs({ theme })}
-          />
-        </Section>
-
-        <Section label="Units">
-          <Segmented<UnitSystem>
-            value={hydrated ? state.prefs.units : "metric"}
-            options={[
-              ["metric", "Metric"],
-              ["imperial", "Imperial"],
-            ]}
-            onChange={(units) => setPrefs({ units })}
-          />
-        </Section>
-
-        <AccentSection />
-
-        <Section label="Clock">
-          <Segmented<ClockFormat>
-            value={hydrated ? state.prefs.clock : "24h"}
-            options={[
-              ["24h", "24-hour"],
-              ["12h", "12-hour"],
-            ]}
-            onChange={(clock) => setPrefs({ clock })}
-          />
-        </Section>
+        <AppearanceSection />
 
         <MacroSection />
 
-        <StorageSection />
-
         <Section label="Metrics">
-          <p className="mb-2.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
-            Waist, supplements, anything you log as one number.
-          </p>
           <Link
             href="/settings/metrics"
             className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
@@ -105,6 +66,8 @@ export default function Settings() {
             Manage metrics
           </Link>
         </Section>
+
+        <StorageSection />
 
         <Section label="File">
           <div className="flex gap-2">
@@ -130,11 +93,78 @@ export default function Settings() {
 }
 
 /**
+ * Theme, units, clock and accent as four rows of one section.
+ *
+ * They were four sections, which gave four headings to a screen where each one carries a single
+ * control. A heading per row is all heading and no rows — the same call as the metrics list.
+ */
+function AppearanceSection() {
+  const { state, hydrated, setPrefs } = useStore()
+  const prefs = hydrated ? state.prefs : DEFAULT_PREFS
+
+  return (
+    <Section label="Appearance">
+      <div className="flex flex-col gap-3">
+        <Row label="Theme">
+          <Segmented<ThemeChoice>
+            value={prefs.theme}
+            options={[
+              ["system", "System"],
+              ["light", "Light"],
+              ["dark", "Dark"],
+            ]}
+            onChange={(theme) => setPrefs({ theme })}
+          />
+        </Row>
+
+        <Row label="Units">
+          <Segmented<UnitSystem>
+            value={prefs.units}
+            options={[
+              ["metric", "Metric"],
+              ["imperial", "Imperial"],
+            ]}
+            onChange={(units) => setPrefs({ units })}
+          />
+        </Row>
+
+        <Row label="Clock">
+          <Segmented<ClockFormat>
+            value={prefs.clock}
+            options={[
+              ["24h", "24-hour"],
+              ["12h", "12-hour"],
+            ]}
+            onChange={(clock) => setPrefs({ clock })}
+          />
+        </Row>
+
+        <Row label="Accent">
+          <AccentPicker />
+        </Row>
+      </div>
+    </Section>
+  )
+}
+
+/** Label above its control, so a segmented group that outgrows the row still fits. */
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+/**
  * Seven presets plus anything you can name in hex. The custom swatch opens the platform
  * colour picker; the field beside it takes a pasted hex with or without the `#`, so a value
  * copied out of Figma drops straight in.
  */
-function AccentSection() {
+function AccentPicker() {
   const { state, hydrated, setPrefs } = useStore()
   const accent = hydrated ? state.prefs.accent : DEFAULT_ACCENT
   const custom = accent.startsWith("#")
@@ -149,7 +179,7 @@ function AccentSection() {
   }
 
   return (
-    <Section label="Accent">
+    <div>
       <div className="flex flex-wrap items-center gap-2">
         {ACCENT_ORDER.map((key) => (
           <Swatch
@@ -205,7 +235,7 @@ function AccentSection() {
         className="nums-quiet mt-2.5 w-32 rounded-lg border px-2.5 py-1.5 text-[13px] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
         style={{ background: "var(--bg-subtle)" }}
       />
-    </Section>
+    </div>
   )
 }
 
@@ -268,7 +298,6 @@ function MacroSection() {
           />
         ))}
       </div>
-      <Status>Leave one blank to drop its ring.</Status>
     </Section>
   )
 }

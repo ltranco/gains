@@ -50,6 +50,12 @@ export const ChevronDown = (p: IconProps) => (
   </Svg>
 )
 
+export const ChevronUp = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 15l6-6 6 6" />
+  </Svg>
+)
+
 export const Plus = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 5v14M5 12h14" />

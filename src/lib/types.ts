@@ -145,6 +145,11 @@ export interface Tracker {
   mode: TrackerMode
   /** Daily target, for the rare metric that has one. */
   target?: number
+  /**
+   * Which way is progress, for the record badge. Absent means the metric has no direction —
+   * a creatine dose isn't a personal best — and gets no badge at all.
+   */
+  better?: "higher" | "lower"
   /** Rebuilt from the remote on pull, so its `mode` is a guess. */
   recovered?: boolean
 }
