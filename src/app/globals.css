@@ -37,21 +37,29 @@
   --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.14);
 
   /*
-   * Ring palette — four hues, cycled if you add a fifth nutrition metric. Not the accent:
-   * one hue can't tell four rings apart, and the accent has to stay the one colour that means
-   * "primary action".
+   * Ring palette. Not the accent: one hue can't tell four rings apart, and the accent has to stay
+   * the one colour that means "primary action".
    *
-   * Validated with the dataviz skill's validate_palette.js against this surface, and again
-   * against the dark one. All five checks pass in both. Worst all-pairs CVD ΔE is 9.1 (protan),
-   * which sits in the band that is only legal alongside secondary encoding — which is why every
-   * ring carries its name and its numbers underneath, and why that text is not optional
-   * decoration. Don't eyeball a replacement; re-run the script.
+   * Generated in OKLCH at one chroma (0.14) with hues at 55/160/255/330, then validated with the
+   * dataviz skill's validate_palette.js against this surface and against the dark one. Both pass
+   * all five checks; the light green is pinned at L 0.64 because lighter than that it drops under
+   * 3:1 and the value printed inside the ring stops being readable.
+   *
+   * The lightnesses are deliberately *unequal*. A matched-lightness set looks more like one family
+   * and was the first thing tried — but under simulated colour-blindness hue collapses and
+   * lightness is all that's left, so every matched candidate failed CVD separation outright. The
+   * shared chroma is what makes these read as a set; the varied lightness is what keeps them
+   * distinguishable.
+   *
+   * Worst all-pairs CVD ΔE is 8.4 (protan), in the band that is only legal alongside secondary
+   * encoding — which is why every ring carries its name and numbers underneath, and why that text
+   * is not decoration. Don't eyeball a replacement; re-run the script.
    */
-  --ring-1: #e5701f;
-  --ring-2: #199e70;
-  --ring-3: #3987e5;
-  --ring-4: #c247a8;
-  --ring-track: rgba(0, 0, 0, 0.08);
+  --ring-1: #c56c21;
+  --ring-2: #16a56e;
+  --ring-3: #2769b7;
+  --ring-4: #c170bb;
+  --ring-track: rgba(0, 0, 0, 0.10);
 
   color-scheme: light;
 }
@@ -81,12 +89,12 @@
     --shadow-sheet: 0 -1px 2px rgba(0, 0, 0, 0.3), 0 -12px 32px rgba(0, 0, 0, 0.5);
     --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.5);
 
-    /* Same hues, pulled into the dark mode lightness band. See the light block. */
-    --ring-1: #d66f20;
-    --ring-2: #17a377;
-    --ring-3: #4a90e0;
-    --ring-4: #c455aa;
-    --ring-track: rgba(255, 255, 255, 0.1);
+    /* Same hues and chroma; only the green moves, since dark mode's band starts higher. */
+    --ring-1: #c56c21;
+    --ring-2: #23ac74;
+    --ring-3: #2769b7;
+    --ring-4: #c170bb;
+    --ring-track: rgba(255, 255, 255, 0.13);
 
     color-scheme: dark;
   }
@@ -116,11 +124,11 @@
   --shadow-sheet: 0 -1px 2px rgba(0, 0, 0, 0.3), 0 -12px 32px rgba(0, 0, 0, 0.5);
   --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.5);
 
-  --ring-1: #d66f20;
-  --ring-2: #17a377;
-  --ring-3: #4a90e0;
-  --ring-4: #c455aa;
-  --ring-track: rgba(255, 255, 255, 0.1);
+  --ring-1: #c56c21;
+  --ring-2: #23ac74;
+  --ring-3: #2769b7;
+  --ring-4: #c170bb;
+  --ring-track: rgba(255, 255, 255, 0.13);
 
   color-scheme: dark;
 }
@@ -370,6 +378,19 @@ input[type="number"] {
   transition: stroke-dashoffset 680ms cubic-bezier(0.16, 1.02, 0.3, 1);
 }
 
+/*
+ * A sheet resizing to the visible viewport as the keyboard slides in or out.
+ *
+ * Without this the follow-up reads that fix the stranded-sheet bug land as three discrete jumps.
+ * The transition turns those samples into one glide, and roughly matches the keyboard's own
+ * quarter-second.
+ */
+.sheet-frame {
+  transition:
+    height 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sheet-panel,
   .sheet-scrim,
@@ -381,8 +402,9 @@ input[type="number"] {
     animation: none;
   }
 
-  /* The arc still has to arrive at the right place — it just gets there immediately. */
-  .ring-arc {
+  /* These still have to arrive at the right place — they just get there immediately. */
+  .ring-arc,
+  .sheet-frame {
     transition: none;
   }
 }

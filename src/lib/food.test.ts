@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { MACROS, macroTotals, summariseFood, foodName, targetFor } from "./food"
+import { MACROS, energyOf, macroTotals, summariseFood, foodName, targetFor } from "./food"
 import { dayFoods, dayProgress } from "./select"
 import type { FoodEntry } from "./types"
 
@@ -96,5 +96,19 @@ describe("ring progress", () => {
     // Capping would make 2,900 against a 2,200 target look exactly like hitting it.
     const [p] = dayProgress([food({ kcal: 3000 })], { kcal: 2000 }, "2026-08-02")
     expect(p?.fraction).toBe(1.5)
+  })
+})
+
+describe("calories derive from the macros", () => {
+  it("uses the Atwater factors every label is computed with", () => {
+    // 4 kcal a gram for protein and carbs, 9 for fat.
+    expect(energyOf({ protein: 48, carbs: 61, fat: 22 })).toBe(48 * 4 + 61 * 4 + 22 * 9)
+    expect(energyOf({ protein: 0, carbs: 0, fat: 0 })).toBe(0)
+  })
+
+  it("rounds to whole calories", () => {
+    // Nobody reads a label to a tenth of a calorie.
+    expect(energyOf({ protein: 0.5, carbs: 0, fat: 0 })).toBe(2)
+    expect(energyOf({ protein: 10.3, carbs: 7.1, fat: 3.4 })).toBe(Math.round(10.3 * 4 + 7.1 * 4 + 3.4 * 9))
   })
 })

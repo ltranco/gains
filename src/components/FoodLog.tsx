@@ -4,7 +4,7 @@ import { formatTime } from "@/lib/date"
 import { foodName, macroTotals, summariseFood } from "@/lib/food"
 import type { ClockFormat, FoodEntry } from "@/lib/types"
 import { formatCount } from "@/lib/units"
-import { Duplicate, Plus, Trash } from "./icons"
+import { Duplicate, Trash } from "./icons"
 
 /**
  * The day's food, as one section with a row per item — exactly the shape an exercise block has.
@@ -27,14 +27,12 @@ import { Duplicate, Plus, Trash } from "./icons"
 export function FoodLog({
   foods,
   clock,
-  onAdd,
   onEdit,
   onDuplicate,
   onDelete,
 }: {
   foods: FoodEntry[]
   clock: ClockFormat
-  onAdd: () => void
   onEdit: (food: FoodEntry) => void
   onDuplicate: (food: FoodEntry) => void
   onDelete: (food: FoodEntry) => void
@@ -52,24 +50,17 @@ export function FoodLog({
           Food
         </h2>
 
-        <div className="flex shrink-0 items-baseline gap-2">
-          {/* The day's total beside the heading rather than as a footer row: it's the headline,
-              and the rows below it are the working. */}
-          {foods.length > 1 && (
-            <span className="nums-quiet text-[12px]" style={{ color: "var(--text-faint)" }}>
-              {formatCount(totals.kcal)} kcal
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onAdd}
-            aria-label="Add food"
-            className="flex size-7 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
+        {/* The day's total beside the heading rather than as a footer row: it's the headline, and
+            the rows below it are the working. No add button here — the bottom bar already has one
+            in thumb range, and a second copy at the top of the section was pure duplication. */}
+        {foods.length > 1 && (
+          <span
+            className="nums-quiet shrink-0 text-[12px]"
             style={{ color: "var(--text-faint)" }}
           >
-            <Plus size={15} />
-          </button>
-        </div>
+            {formatCount(totals.kcal)} kcal
+          </span>
+        )}
       </div>
 
       <ul className="flex flex-col">

@@ -83,6 +83,25 @@ export function macroTotals(foods: FoodEntry[]): MacroTotals {
   return out
 }
 
+/**
+ * Energy per gram, the Atwater factors every nutrition label is computed with: 4 kcal for a gram of
+ * protein or carbohydrate, 9 for a gram of fat.
+ *
+ * Which means calories are *derivable* from the other three, and the entry sheet does that rather
+ * than asking for a number you'd have to read off separately. It stays overridable: a label's
+ * stated calories and the sum of its rounded macros routinely disagree by a few percent, and the
+ * label is the one you'd rather keep.
+ */
+const KCAL_PER_GRAM: Record<Exclude<MacroKey, "kcal">, number> = { protein: 4, carbs: 4, fat: 9 }
+
+export function energyOf(macros: { protein: number; carbs: number; fat: number }): number {
+  const total =
+    macros.protein * KCAL_PER_GRAM.protein +
+    macros.carbs * KCAL_PER_GRAM.carbs +
+    macros.fat * KCAL_PER_GRAM.fat
+  return Math.round(total)
+}
+
 export function targetFor(targets: MacroTargets, key: MacroKey): number | undefined {
   const t = targets[key]
   return typeof t === "number" && t > 0 ? t : undefined

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 
 import { dateTimeLocalValue, parseDateTimeLocal, toDayKey } from "@/lib/date"
-import { MACROS, valueOf, type MacroKey } from "@/lib/food"
+import { MACROS, energyOf, valueOf, type MacroKey } from "@/lib/food"
 import type { FoodEntry } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
 import { Sheet } from "./Sheet"
@@ -23,6 +23,14 @@ import { DateTimeField, NumberField, TextField } from "./NumberField"
  * Nothing is focused on open, unlike the single-field sheets. Five fields plus a keyboard is more
  * than fits, and raising it before you've said which field you want covered the four you probably
  * did want.
+ *
+ * ## Calories come last, and fill themselves in
+ *
+ * They're the sum of the other three at 4/4/9 kcal per gram, so typing them as well is typing a
+ * number you already gave. The field sits at the end and follows the macros above it until you
+ * touch it, after which it's yours — a label's stated calories and the sum of its rounded macros
+ * routinely differ by a few percent, and the label is the one worth keeping. Clearing the field
+ * hands it back to the calculation.
  */
 
 type Draft = Record<MacroKey, string> & { name: string; at: string }
@@ -52,38 +60,62 @@ export function FoodSheet({
 }) {
   const { addFoods, updateFood, deleteFood } = useStore()
   const [draft, setDraft] = useState<Draft>(EMPTY)
+  /** True once the calories field has been typed into, after which it stops following the macros. */
+  const [ownKcal, setOwnKcal] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     setDraft(editing ? draftFrom(editing) : EMPTY)
+    // An existing food counts as overridden only if its calories aren't what the macros imply.
+    setOwnKcal(
+      editing
+        ? editing.kcal !==
+            energyOf({ protein: editing.proteinG, carbs: editing.carbsG, fat: editing.fatG })
+        : false,
+    )
     setError(null)
   }, [open, editing])
 
   const set = (key: keyof Draft) => (value: string) =>
     setDraft((d) => ({ ...d, [key]: value }))
 
+  const num = (raw: string): number => {
+    const trimmed = raw.trim().replace(/,/g, "")
+    if (!trimmed) return 0
+    const n = Number(trimmed)
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  }
+
+  const grams = {
+    protein: num(draft.protein),
+    carbs: num(draft.carbs),
+    fat: num(draft.fat),
+  }
+  const derived = energyOf(grams)
+  // What the field shows, and what gets saved: yours if you typed one, otherwise the calculation.
+  const kcalShown = ownKcal ? draft.kcal : derived > 0 ? String(derived) : ""
+
+  const onKcalChange = (value: string) => {
+    // Emptying it hands the field back to the macros rather than logging a zero-calorie meal.
+    setOwnKcal(value.trim().length > 0)
+    set("kcal")(value)
+  }
+
   const commit = () => {
-    const kcal = Number(draft.kcal.trim().replace(/,/g, ""))
-    if (!draft.kcal.trim() || !Number.isFinite(kcal) || kcal <= 0) {
-      setError("Enter the calories.")
+    const kcal = num(kcalShown)
+    if (kcal <= 0) {
+      setError("Enter the macros, or the calories.")
       return
     }
     setError(null)
 
-    const macro = (key: MacroKey): number => {
-      const raw = draft[key].trim().replace(/,/g, "")
-      if (!raw) return 0
-      const n = Number(raw)
-      return Number.isFinite(n) && n >= 0 ? n : 0
-    }
-
     const values = {
       name: draft.name.trim(),
       kcal,
-      proteinG: macro("protein"),
-      carbsG: macro("carbs"),
-      fatG: macro("fat"),
+      proteinG: grams.protein,
+      carbsG: grams.carbs,
+      fatG: grams.fat,
     }
 
     if (editing) {
@@ -149,7 +181,9 @@ export function FoodSheet({
           freeText
         />
 
-        {MACROS.map((macro) => (
+        {/* Macros first, calories last — it's derived from them, so it reads as the total at the
+            bottom of a column rather than a question asked before the answers. */}
+        {MACROS.filter((m) => m.key !== "kcal").map((macro) => (
           <NumberField
             key={macro.key}
             label={macro.label}
@@ -160,6 +194,16 @@ export function FoodSheet({
             placeholder="0"
           />
         ))}
+
+        <NumberField
+          label="Calories"
+          hint={ownKcal ? "yours" : derived > 0 ? "from macros" : undefined}
+          value={kcalShown}
+          onChange={onKcalChange}
+          step={50}
+          suffix="kcal"
+          placeholder="0"
+        />
 
         {/* Last, and deliberately quiet: you are correcting a record, not logging one. */}
         {editing && (

@@ -4,7 +4,7 @@ import { formatTime } from "@/lib/date"
 import type { MetricRow } from "@/lib/select"
 import type { ClockFormat, Reading, Tracker, UnitSystem } from "@/lib/types"
 import { formatTracker } from "@/lib/units"
-import { Duplicate, Plus, Trash } from "./icons"
+import { Duplicate, Trash } from "./icons"
 
 /**
  * The day's metrics: one section, one row per reading, in the order they were logged.
@@ -22,7 +22,6 @@ export function MetricsLog({
   units,
   clock,
   records,
-  onAdd,
   onEdit,
   onDuplicate,
   onDelete,
@@ -32,7 +31,6 @@ export function MetricsLog({
   clock: ClockFormat
   /** Reading ids that were a record when logged. */
   records: Set<string>
-  onAdd: () => void
   onEdit: (tracker: Tracker, reading: Reading) => void
   onDuplicate: (reading: Reading) => void
   onDelete: (reading: Reading, tracker: Tracker) => void
@@ -41,22 +39,15 @@ export function MetricsLog({
 
   return (
     <section className="border-b px-3 py-3 last:border-b-0">
-      <div className="mb-1 flex items-baseline justify-between gap-3 pl-1">
+      {/* No add button on the heading: the caret beside Food already opens this, and a second
+          copy here was duplication. */}
+      <div className="mb-1 pl-1">
         <h2
-          className="min-w-0 truncate text-[14px] font-normal tracking-[-0.005em]"
+          className="truncate text-[14px] font-normal tracking-[-0.005em]"
           style={{ color: "var(--text-muted)" }}
         >
           Metrics
         </h2>
-        <button
-          type="button"
-          onClick={onAdd}
-          aria-label="Add a metric"
-          className="flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
-          style={{ color: "var(--text-faint)" }}
-        >
-          <Plus size={15} />
-        </button>
       </div>
 
       <ul className="flex flex-col">

@@ -133,7 +133,7 @@ export function Sheet({
 
   return (
     <div
-      className={`fixed inset-x-0 top-0 z-50 flex justify-center ${
+      className={`sheet-frame fixed inset-x-0 top-0 z-50 flex justify-center ${
         fullHeight ? "items-stretch sm:items-center sm:py-6" : "items-end sm:items-center"
       }`}
       style={frame}

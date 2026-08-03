@@ -203,7 +203,6 @@ export default function Today() {
                 <FoodLog
                   foods={foods}
                   clock={state.prefs.clock}
-                  onAdd={openFood}
                   onEdit={(edited) => setFood({ editing: edited })}
                   onDuplicate={(f) => duplicateFood(f.id)}
                   onDelete={handleDeleteFood}
@@ -213,7 +212,6 @@ export default function Today() {
                   units={state.prefs.units}
                   clock={state.prefs.clock}
                   records={metricRecords}
-                  onAdd={() => setMetricsOpen(true)}
                   onEdit={(tracker, edited) => setReading({ tracker, editing: edited })}
                   onDuplicate={(r) => duplicateReading(r.id)}
                   onDelete={handleDeleteReading}

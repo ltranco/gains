@@ -35,7 +35,7 @@ const STROKE = 10
  * read as a second ring rather than as the space the first one has left to travel; slimmer, it
  * recedes and the progress is the only thing with weight.
  */
-const TRACK = 6
+const TRACK = 7
 
 /** Ring hue per macro. Fixed, so calories are always the same colour as yesterday. */
 const HUE: Record<MacroKey, string> = {
