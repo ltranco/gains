@@ -27,14 +27,14 @@ export function TopBar() {
 }
 
 /** Settings and any other secondary page: back arrow plus a title. */
-export function SubPageBar({ title }: { title: string }) {
+export function SubPageBar({ title, back = "/" }: { title: string; back?: string }) {
   return (
     <header
       className="sticky top-0 z-20 flex items-center gap-1 border-b px-2 py-2.5"
       style={{ background: "var(--bg)", paddingTop: "calc(env(safe-area-inset-top) + 0.625rem)" }}
     >
       <Link
-        href="/"
+        href={back}
         aria-label="Back"
         className="flex size-9 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
         style={{ color: "var(--text-muted)" }}

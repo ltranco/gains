@@ -2,24 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 
+import Link from "next/link"
+
 import { SubPageBar } from "@/components/TopBar"
-import { Alert, Check, ChevronDown, Close, Spinner } from "@/components/icons"
+import { Alert, Check, Close, Spinner } from "@/components/icons"
 import { ACCENTS, ACCENT_ORDER, DEFAULT_ACCENT, normaliseHex } from "@/lib/accents"
 import { formatStamp, todayKey } from "@/lib/date"
 import { applyPull, planPush, pullLog, pushLog } from "@/lib/remote"
 import { syncablesOf } from "@/lib/samples"
 import { parseState } from "@/lib/store"
-import { isBuiltin, validateTrackerName } from "@/lib/trackers"
-import {
-  TRACKER_UNITS,
-  type ClockFormat,
-  type ThemeChoice,
-  type Tracker,
-  type TrackerMode,
-  type TrackerUnit,
-  type UnitSystem,
-} from "@/lib/types"
-import { trackerUnit, trackerValue } from "@/lib/units"
+import { MACROS } from "@/lib/food"
+import type { ClockFormat, ThemeChoice, Tracker, UnitSystem } from "@/lib/types"
 import { useRemote } from "@/providers/RemoteProvider"
 import { useStore } from "@/providers/StoreProvider"
 
@@ -40,20 +33,19 @@ export default function Settings() {
 
   const importFile = async (file: File) => {
     const next = parseState(await file.text())
-    if (next.sets.length === 0 && next.readings.length === 0) {
+    const counts = [
+      next.sets.length > 0 && `${next.sets.length} sets`,
+      next.foods.length > 0 && `${next.foods.length} foods`,
+      next.readings.length > 0 && `${next.readings.length} entries`,
+    ].filter((x): x is string => Boolean(x))
+
+    if (counts.length === 0) {
       setFileStatus("That file has nothing logged in it. Nothing imported.")
       return
     }
     // Replaces rather than merges, for the same reason the remote does. See lib/remote.ts.
     replaceAll({ ...next, prefs: state.prefs })
-    setFileStatus(
-      [
-        next.sets.length > 0 && `${next.sets.length} sets`,
-        next.readings.length > 0 && `${next.readings.length} entries`,
-      ]
-        .filter(Boolean)
-        .join(" and ") + " imported.",
-    )
+    setFileStatus(`Imported ${counts.join(", ")}.`)
   }
 
   return (
@@ -97,9 +89,22 @@ export default function Settings() {
           />
         </Section>
 
-        <MetricsSection />
+        <MacroSection />
 
         <StorageSection />
+
+        <Section label="Metrics">
+          <p className="mb-2.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
+            Waist, supplements, anything you log as one number.
+          </p>
+          <Link
+            href="/settings/metrics"
+            className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
+            style={{ borderColor: "var(--border-strong)" }}
+          >
+            Manage metrics
+          </Link>
+        </Section>
 
         <Section label="File">
           <div className="flex gap-2">
@@ -238,285 +243,82 @@ function Swatch({
 }
 
 /**
- * The metrics you log a single number for.
+ * What the rings are fractions of.
  *
- * Builtins can be renamed and re-targeted but not removed — they're what the rings are drawn
- * from, and a Calories row you can delete is a rings block that can silently become empty.
- * Custom ones can be removed, which takes their entries with them.
- *
- * **Unit is frozen after creation**, like the slug, and for the same reason: the unit is half the
- * metric name. Changing `waist` from cm to inches wouldn't convert anything, it would start
- * writing `waist_in` and orphan every sample already stored under `waist_cm`.
+ * Four numbers in one row, because that's all this is — and because a macro target is a preference
+ * rather than a thing you log, which is why it lives here and not on the metrics page. Clearing a
+ * field removes that ring rather than setting it to zero.
  */
-function MetricsSection() {
-  const { state, trackers, saveTracker, removeTracker } = useStore()
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
+function MacroSection() {
+  const { state, hydrated, setPrefs } = useStore()
+  const targets = hydrated ? state.prefs.macros : {}
 
   return (
-    <Section label="Metrics">
-      <ul className="flex flex-col">
-        {trackers.map((tracker) => (
-          <li key={tracker.id} className="border-b last:border-b-0">
-            <button
-              type="button"
-              onClick={() => setExpanded((id) => (id === tracker.id ? null : tracker.id))}
-              aria-expanded={expanded === tracker.id}
-              className="flex w-full items-center gap-3 py-2.5 text-left"
-            >
-              <span className="min-w-0 flex-1 truncate text-[14px]">{tracker.name}</span>
-              <span
-                className="nums-quiet shrink-0 text-[12px]"
-                style={{ color: "var(--text-faint)" }}
-              >
-                {tracker.target === undefined
-                  ? trackerUnit(tracker.unit, state.prefs.units)
-                  : `${trackerValue(tracker.target, tracker.unit, state.prefs.units)} ${trackerUnit(
-                      tracker.unit,
-                      state.prefs.units,
-                    )}`}
-              </span>
-              <span
-                className="shrink-0 transition-transform"
-                style={{
-                  color: "var(--text-faint)",
-                  transform: expanded === tracker.id ? "rotate(180deg)" : undefined,
-                }}
-              >
-                <ChevronDown size={15} />
-              </span>
-            </button>
-
-            {expanded === tracker.id && (
-              <TrackerEditor
-                tracker={tracker}
-                units={state.prefs.units}
-                onSave={saveTracker}
-                onRemove={() => {
-                  removeTracker(tracker.id)
-                  setExpanded(null)
-                }}
-              />
-            )}
-          </li>
+    <Section label="Daily targets">
+      <div className="flex gap-2">
+        {MACROS.map((macro) => (
+          <TargetField
+            key={macro.key}
+            label={macro.label}
+            unit={macro.unit}
+            value={targets[macro.key]}
+            onCommit={(next) =>
+              setPrefs({ macros: { ...state.prefs.macros, [macro.key]: next } })
+            }
+          />
         ))}
-      </ul>
-
-      {adding ? (
-        <NewTracker
-          existing={trackers}
-          onCancel={() => setAdding(false)}
-          onCreate={(tracker) => {
-            saveTracker(tracker)
-            setAdding(false)
-            setExpanded(tracker.id)
-          }}
-        />
-      ) : (
-        <div className="mt-3">
-          <Button onClick={() => setAdding(true)}>Add metric</Button>
-        </div>
-      )}
+      </div>
+      <Status>Leave one blank to drop its ring.</Status>
     </Section>
   )
 }
 
-function TrackerEditor({
-  tracker,
-  units,
-  onSave,
-  onRemove,
+function TargetField({
+  label,
+  unit,
+  value,
+  onCommit,
 }: {
-  tracker: Tracker
-  units: UnitSystem
-  onSave: (next: Tracker) => void
-  onRemove: () => void
+  label: string
+  unit: string
+  value: number | undefined
+  onCommit: (next: number | undefined) => void
 }) {
-  // Local drafts so a half-typed name or target doesn't rewrite state on every keystroke —
-  // the target especially, since an empty field would momentarily read as "no target" and drop
-  // the ring.
-  const [name, setName] = useState(tracker.name)
-  const [target, setTarget] = useState(
-    tracker.target === undefined ? "" : trackerValue(tracker.target, tracker.unit, units),
-  )
+  // Local draft so a half-typed number doesn't repaint the rings on every keystroke — and so an
+  // empty field mid-edit doesn't momentarily read as "no target" and drop the ring.
+  const [draft, setDraft] = useState("")
+  useEffect(() => setDraft(value === undefined ? "" : String(value)), [value])
 
-  const commitName = () => {
-    const trimmed = name.trim()
-    if (!trimmed || trimmed === tracker.name) return setName(tracker.name)
-    // The id never moves. That's the point of it being separate from the name.
-    onSave({ ...tracker, name: trimmed })
-  }
-
-  const commitTarget = () => {
-    const raw = target.trim()
-    if (!raw) {
-      const { target: _drop, ...rest } = tracker
-      return onSave(rest)
-    }
-    const n = Number(raw.replace(/,/g, ""))
-    if (!Number.isFinite(n) || n <= 0) {
-      return setTarget(
-        tracker.target === undefined ? "" : trackerValue(tracker.target, tracker.unit, units),
-      )
-    }
-    // Stored in the tracker's own unit, so an imperial-entered waist target lands as cm.
-    onSave({ ...tracker, target: tracker.unit === "cm" && units === "imperial" ? n * 2.54 : n })
+  const commit = () => {
+    const raw = draft.trim().replace(/,/g, "")
+    if (!raw) return onCommit(undefined)
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n <= 0) return setDraft(value === undefined ? "" : String(value))
+    onCommit(n)
   }
 
   return (
-    <div className="flex flex-col gap-3 pb-4">
-      <Field label="Name" value={name} onChange={setName} onBlur={commitName} />
-
-      <div className="flex flex-col gap-1">
-        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-          Daily target
-        </span>
-        <div className="flex items-center gap-2">
-          <input
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            onBlur={commitTarget}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault()
-                e.currentTarget.blur()
-              }
-            }}
-            inputMode="decimal"
-            placeholder="none"
-            className="nums w-28 rounded-lg border px-2.5 py-2 text-[14px] outline-none placeholder:font-normal placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
-            style={{ background: "var(--bg-subtle)" }}
-          />
-          <span className="text-[13px]" style={{ color: "var(--text-faint)" }}>
-            {trackerUnit(tracker.unit, units)}
-          </span>
-        </div>
-        <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-          No target, no ring — an arc needs something to be a fraction of.
-        </span>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-          A day&apos;s entries
-        </span>
-        <Segmented<TrackerMode>
-          value={tracker.mode}
-          options={[
-            ["sum", "Add up"],
-            ["point", "Latest wins"],
-          ]}
-          onChange={(mode) => onSave({ ...tracker, mode, ...(tracker.recovered ? { recovered: false } : {}) })}
-        />
-      </div>
-
-      {!isBuiltin(tracker.id) && (
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onRemove}
-            className="rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--bg-hover)]"
-            style={{ color: "var(--danger)", borderColor: "var(--border-strong)" }}
-          >
-            Remove
-          </button>
-          <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-            Deletes its entries here too.
-          </span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function NewTracker({
-  existing,
-  onCancel,
-  onCreate,
-}: {
-  existing: Tracker[]
-  onCancel: () => void
-  onCreate: (tracker: Tracker) => void
-}) {
-  const [name, setName] = useState("")
-  const [unit, setUnit] = useState<TrackerUnit>("g")
-  const [nutrition, setNutrition] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const create = () => {
-    // The slug is the metric prefix and can never move, so it's validated here and only here:
-    // against Apple Health's own names, against all 173 exercise prefixes, and against what you
-    // already have. See lib/trackers.ts for why a collision is unrecoverable.
-    const checked = validateTrackerName(name, existing)
-    if ("error" in checked) return setError(checked.error)
-    onCreate({
-      id: checked.id,
-      name: name.trim(),
-      unit,
-      mode: nutrition ? "sum" : "point",
-      ...(nutrition ? { nutrition: true } : {}),
-    })
-  }
-
-  return (
-    <div className="mt-3 flex flex-col gap-3 rounded-lg border p-3">
-      <Field label="Name" value={name} onChange={setName} placeholder="Creatine" />
-
-      <div className="flex flex-col gap-1">
-        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-          Unit
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {TRACKER_UNITS.map((u) => (
-            <button
-              key={u}
-              type="button"
-              aria-pressed={u === unit}
-              onClick={() => setUnit(u)}
-              className="nums-quiet rounded-lg border px-2.5 py-1.5 text-[13px] transition-colors"
-              style={
-                u === unit
-                  ? { borderColor: "var(--accent)", color: "var(--accent)" }
-                  : { color: "var(--text-muted)" }
-              }
-            >
-              {u}
-            </button>
-          ))}
-        </div>
-        <span className="text-[12px]" style={{ color: "var(--text-faint)" }}>
-          Can&apos;t be changed later — it&apos;s half the metric name in storage.
-        </span>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-          Where it goes
-        </span>
-        <Segmented<"food" | "other">
-          value={nutrition ? "food" : "other"}
-          options={[
-            ["food", "Nutrition"],
-            ["other", "Body & other"],
-          ]}
-          onChange={(v) => setNutrition(v === "food")}
-        />
-      </div>
-
-      {error && <Status bad>{error}</Status>}
-
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={create}
-          className="rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors"
-          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-        >
-          Create
-        </button>
-        <Button onClick={onCancel}>Cancel</Button>
-      </div>
-    </div>
+    <label className="flex min-w-0 flex-1 flex-col gap-1">
+      <span className="truncate text-[12px]" style={{ color: "var(--text-muted)" }}>
+        {label}
+      </span>
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            e.currentTarget.blur()
+          }
+        }}
+        inputMode="numeric"
+        placeholder="none"
+        aria-label={`${label} target in ${unit}`}
+        className="nums w-full rounded-lg border px-2 py-2 text-center text-[14px] outline-none placeholder:font-normal placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+        style={{ background: "var(--bg-subtle)" }}
+      />
+    </label>
   )
 }
 
@@ -539,8 +341,8 @@ function StorageSection() {
 
   // Sets and readings travel as one list of samples — see lib/samples.ts.
   const items = useMemo(
-    () => syncablesOf(state.sets, state.readings, trackers),
-    [state.sets, state.readings, trackers],
+    () => syncablesOf(state.sets, state.foods, state.readings, trackers),
+    [state.sets, state.foods, state.readings, trackers],
   )
   const plan = useMemo(() => planPush(config, items), [config, items])
 

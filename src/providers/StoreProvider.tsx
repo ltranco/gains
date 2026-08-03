@@ -13,7 +13,7 @@ import {
 import { instantOn } from "@/lib/date"
 import { EMPTY_STATE, newId, readState, STORAGE_KEY, parseState, writeState } from "@/lib/store"
 import { allTrackers } from "@/lib/trackers"
-import type { GainsState, Prefs, Reading, SetEntry, Tracker } from "@/lib/types"
+import type { FoodEntry, GainsState, Prefs, Reading, SetEntry, Tracker } from "@/lib/types"
 
 interface StoreApi {
   state: GainsState
@@ -28,13 +28,17 @@ interface StoreApi {
   restoreSet: (set: SetEntry) => void
   duplicateSet: (id: string) => void
   /**
-   * Adds readings, all sharing one instant.
+   * Adds foods.
    *
-   * Plural because a meal is several numbers measured at once — calories and three macros — and
-   * that is also the shape an inference service will hand back from a photo of a plate. Timestamp
-   * nudging is per series, so four readings at one instant collide with nothing.
+   * Plural because a photo of a plate can resolve to several items at once, and that path should
+   * be one call rather than a loop that stamps each one a millisecond apart.
    */
-  addReadings: (readings: Omit<Reading, "id" | "loggedAt">[]) => void
+  addFoods: (foods: Omit<FoodEntry, "id" | "loggedAt">[]) => void
+  updateFood: (id: string, patch: Partial<Omit<FoodEntry, "id">>) => void
+  deleteFood: (id: string) => void
+  restoreFood: (food: FoodEntry) => void
+  duplicateFood: (id: string) => void
+  addReading: (reading: Omit<Reading, "id" | "loggedAt">) => void
   updateReading: (id: string, patch: Partial<Omit<Reading, "id">>) => void
   deleteReading: (id: string) => void
   restoreReading: (reading: Reading) => void
@@ -113,17 +117,50 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  const addReadings = useCallback((readings: Omit<Reading, "id" | "loggedAt">[]) => {
-    if (readings.length === 0) return
+  const addFoods = useCallback((foods: Omit<FoodEntry, "id" | "loggedAt">[]) => {
+    if (foods.length === 0) return
+    setState((s) => ({
+      ...s,
+      foods: [
+        ...s.foods,
+        ...foods.map((f) => ({ ...f, id: newId(), loggedAt: instantOn(f.date) })),
+      ],
+    }))
+  }, [])
+
+  const updateFood = useCallback((id: string, patch: Partial<Omit<FoodEntry, "id">>) => {
+    setState((s) => ({
+      ...s,
+      foods: s.foods.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }))
+  }, [])
+
+  const deleteFood = useCallback((id: string) => {
+    setState((s) => ({ ...s, foods: s.foods.filter((x) => x.id !== id) }))
+  }, [])
+
+  const restoreFood = useCallback((food: FoodEntry) => {
+    setState((s) =>
+      s.foods.some((x) => x.id === food.id) ? s : { ...s, foods: [...s.foods, food] },
+    )
+  }, [])
+
+  const duplicateFood = useCallback((id: string) => {
     setState((s) => {
-      // One instant for the whole batch, so a meal's four numbers are recognisably one event
-      // rather than four that happen to be close together.
-      const loggedAt = instantOn(readings[0]!.date)
+      const src = s.foods.find((x) => x.id === id)
+      if (!src) return s
       return {
         ...s,
-        readings: [...s.readings, ...readings.map((r) => ({ ...r, id: newId(), loggedAt }))],
+        foods: [...s.foods, { ...src, id: newId(), loggedAt: instantOn(src.date) }],
       }
     })
+  }, [])
+
+  const addReading = useCallback((reading: Omit<Reading, "id" | "loggedAt">) => {
+    setState((s) => ({
+      ...s,
+      readings: [...s.readings, { ...reading, id: newId(), loggedAt: instantOn(reading.date) }],
+    }))
   }, [])
 
   const updateReading = useCallback((id: string, patch: Partial<Omit<Reading, "id">>) => {
@@ -183,7 +220,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteSet,
       restoreSet,
       duplicateSet,
-      addReadings,
+      addFoods,
+      updateFood,
+      deleteFood,
+      restoreFood,
+      duplicateFood,
+      addReading,
       updateReading,
       deleteReading,
       restoreReading,
@@ -201,7 +243,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteSet,
       restoreSet,
       duplicateSet,
-      addReadings,
+      addFoods,
+      updateFood,
+      deleteFood,
+      restoreFood,
+      duplicateFood,
+      addReading,
       updateReading,
       deleteReading,
       restoreReading,

@@ -57,7 +57,42 @@ export interface SetEntry {
   note?: string
 }
 
-/* ── Trackers: everything logged as one number rather than as a set ──────────── */
+/* ── Food: what you ate, with its macros ─────────────────────────────────────── */
+
+/**
+ * One thing you ate. A meal is a *food*, not four unrelated numbers — nobody logs "48 g of
+ * protein", they log a chicken bowl that happened to contain it. This is also the shape an
+ * inference service will hand back from a photo of a plate: one item, four figures.
+ *
+ * Macros are absent rather than zero when they weren't recorded, with one exception: a food
+ * genuinely containing no fat stores `0`, because "no fat" and "didn't say" are different facts.
+ * The entry sheet writes 0 for a blank macro on purpose — you are reading a label, and a blank
+ * there means none.
+ */
+export interface FoodEntry {
+  id: string
+  /** Local calendar day, `YYYY-MM-DD`. Not derived from `loggedAt` — see lib/date.ts. */
+  date: string
+  /** The instant, which is also its identity remotely. */
+  loggedAt: string
+  /** What you ate. Display only — a number store can't hold it, so it never comes back. */
+  name: string
+  kcal: number
+  proteinG: number
+  carbsG: number
+  fatG: number
+  note?: string
+}
+
+/** A daily target per macro. Any of them may be unset, in which case that ring isn't drawn. */
+export interface MacroTargets {
+  kcal?: number
+  protein?: number
+  carbs?: number
+  fat?: number
+}
+
+/* ── Metrics: the custom things logged as one number ─────────────────────────── */
 
 /**
  * The unit a tracker records in, and the metric-name suffix it pushes under.
@@ -95,10 +130,11 @@ export const UNIT_LABEL: Record<TrackerUnit, string> = {
 export type TrackerMode = "sum" | "point"
 
 /**
- * A thing you log a single number for: calories, protein, waist. The counterpart to `Exercise`.
+ * A thing you log a single number for: a waist measurement, a creatine dose. The counterpart to
+ * `Exercise`, and deliberately *not* where macros live — those are fields of a `FoodEntry`.
  *
  * Builtins live in `lib/trackers.ts`; anything else is user-defined and lives in `GainsState`,
- * because a custom tracker is data — it has to survive an export and come back.
+ * because a custom metric is data — it has to survive an export and come back.
  */
 export interface Tracker {
   /** Slug, frozen at creation. This is the metric prefix, so renaming must never touch it. */
@@ -107,20 +143,15 @@ export interface Tracker {
   name: string
   unit: TrackerUnit
   mode: TrackerMode
-  /** Daily target. Optional, and a tracker without one gets no ring — an arc needs a whole. */
+  /** Daily target, for the rare metric that has one. */
   target?: number
-  /** Behind the Food button and drawn as a ring. Body measurements are neither. */
-  nutrition?: boolean
-  /** Rebuilt from the remote on pull, so its `mode` and `target` are a guess. */
+  /** Rebuilt from the remote on pull, so its `mode` is a guess. */
   recovered?: boolean
 }
 
 /**
  * One logged number. The counterpart to `SetEntry`, and stored the same way: `date` is the
  * local calendar day, `loggedAt` is the instant — which is also its identity remotely.
- *
- * Several readings may share one `loggedAt` on purpose. A meal is calories and three macros
- * measured at once, and later an inference service will produce exactly that shape from a photo.
  */
 export interface Reading {
   id: string
@@ -151,6 +182,22 @@ export interface Prefs {
   clock: ClockFormat
   /** A preset key from `lib/accents.ts`, or any `#rrggbb`. */
   accent: string
+  /** What the rings are fractions of. Preferences rather than data — nothing is logged here. */
+  macros: MacroTargets
+}
+
+/**
+ * What was sent for one entry, and where it landed.
+ *
+ * `fp` detects a local edit. `at` is the millisecond timestamp the samples were written at, which
+ * is the only way to address them once the entry no longer exists locally — a tombstone has to
+ * point somewhere. `prefixes` is every series it wrote, because a food wrote four and all four
+ * have to be retracted together.
+ */
+export interface PushRecord {
+  fp: string
+  at: number
+  prefixes: string[]
 }
 
 /**
@@ -168,25 +215,22 @@ export interface RemoteConfig {
   /** Push anything new once a minute, without being asked. */
   autoPush?: boolean
   lastSyncedAt?: string
-  /**
-   * Set id -> what was sent and when. `fp` detects a local edit; `at` is the millisecond
-   * timestamp the samples were written at, which is the only way to address them once the
-   * set no longer exists locally — a tombstone has to point somewhere.
-   */
-  pushed?: Record<string, { fp: string; at: number; prefix: string }>
+  /** Entry id -> what was sent and where it landed. */
+  pushed?: Record<string, PushRecord>
 }
 
 /**
- * The exported document. `version` went to 2 when readings arrived; there is no migration step
- * because the parser fills missing fields, so a v1 export loads with no readings and no custom
- * trackers rather than failing.
+ * The exported document. `version` went to 2 when food and metrics arrived; there is no migration
+ * step because the parser fills missing fields, so a v1 export loads with no food, no readings and
+ * no custom metrics rather than failing.
  *
- * `trackers` holds user-defined ones only. Builtins are code, so shipping a new one reaches
+ * `trackers` holds user-defined metrics only. Builtins are code, so shipping a new one reaches
  * every device without touching stored data.
  */
 export interface GainsState {
   version: 2
   sets: SetEntry[]
+  foods: FoodEntry[]
   readings: Reading[]
   trackers: Tracker[]
   prefs: Prefs

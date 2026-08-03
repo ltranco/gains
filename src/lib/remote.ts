@@ -7,7 +7,15 @@ import {
   tombstonePayload,
   type Syncable,
 } from "./samples"
-import type { GainsState, Reading, RemoteConfig, SetEntry, Tracker } from "./types"
+import type {
+  FoodEntry,
+  GainsState,
+  PushRecord,
+  Reading,
+  RemoteConfig,
+  SetEntry,
+  Tracker,
+} from "./types"
 
 /**
  * Client side of the bring-your-own storage layer.
@@ -32,7 +40,8 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: string }
 export interface Tombstone {
   /** Local id, so bookkeeping can be cleared once the tombstone lands. */
   id: string
-  prefix: string
+  /** Every series the entry wrote. A food wrote four; a set wrote one. */
+  prefixes: string[]
   at: number
   /** True when the entry still exists locally and is being rewritten rather than removed. */
   replaced: boolean
@@ -74,7 +83,7 @@ export function planPush(config: RemoteConfig, items: Syncable[]): PushPlan {
   for (const [id, entry] of Object.entries(pushed)) {
     // Deleted, or edited: both retract what is stored. An edit then re-lands as a fresh sample.
     if (!live.has(id) || changedIds.has(id)) {
-      tombstones.push({ id, prefix: entry.prefix, at: entry.at, replaced: live.has(id) })
+      tombstones.push({ id, prefixes: entry.prefixes, at: entry.at, replaced: live.has(id) })
     }
   }
 
@@ -156,12 +165,12 @@ export async function pushLog(
     written += res.value.written ?? 0
     // Record where each entry actually landed, collision nudge included, so a later tombstone
     // points at the sample that exists rather than the one we intended to write.
-    const { stampById, prefixById } = buildSamples(batch)
+    const { stampById, prefixesById } = buildSamples(batch)
     for (const item of batch) {
       const at = stampById.get(item.id)
-      const prefix = prefixById.get(item.id)
-      if (at === undefined || prefix === undefined) continue
-      pushed[item.id] = { fp: item.fp, at, prefix }
+      const prefixes = prefixesById.get(item.id)
+      if (at === undefined || prefixes === undefined) continue
+      pushed[item.id] = { fp: item.fp, at, prefixes }
     }
   }
 
@@ -177,6 +186,7 @@ export async function pushLog(
 
 export interface PullOutcome {
   sets: SetEntry[]
+  foods: FoodEntry[]
   readings: Reading[]
   /** Trackers that had to be rebuilt, so the UI can say their mode is a guess. */
   recovered: Tracker[]
@@ -209,7 +219,7 @@ export async function pullLog(
   })
   if (!res.ok) return res
 
-  const { sets, readings, recovered, voided, unknownPrefixes } = reconstruct(
+  const { sets, foods, readings, recovered, voided, unknownPrefixes } = reconstruct(
     res.value.body ?? "",
     trackers,
   )
@@ -217,14 +227,14 @@ export async function pullLog(
   const merged = mergeTrackers(trackers, recovered)
 
   // A pulled entry is by definition already stored, at the timestamp it came back on.
-  const pushed: Record<string, { fp: string; at: number; prefix: string }> = {}
-  const items = syncablesOf(sets, readings, merged)
-  const { stampById, prefixById } = buildSamples(items)
+  const pushed: Record<string, PushRecord> = {}
+  const items = syncablesOf(sets, foods, readings, merged)
+  const { stampById, prefixesById } = buildSamples(items)
   for (const item of items) {
     const at = stampById.get(item.id)
-    const prefix = prefixById.get(item.id)
-    if (at !== undefined && prefix !== undefined) {
-      pushed[item.id] = { fp: item.fp, at, prefix }
+    const prefixes = prefixesById.get(item.id)
+    if (at !== undefined && prefixes !== undefined) {
+      pushed[item.id] = { fp: item.fp, at, prefixes }
     }
   }
 
@@ -232,6 +242,7 @@ export async function pullLog(
     ok: true,
     value: {
       sets,
+      foods,
       readings,
       recovered,
       voided,
@@ -289,6 +300,7 @@ export function applyPull(state: GainsState, pulled: PullOutcome): GainsState {
   return {
     ...state,
     sets: pulled.sets,
+    foods: pulled.foods,
     readings: pulled.readings,
     trackers: mergeTrackers(state.trackers, pulled.recovered),
   }

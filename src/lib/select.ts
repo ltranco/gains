@@ -1,5 +1,6 @@
 import { byId } from "./catalog"
-import type { Exercise, Kind, Reading, SetEntry, Tracker } from "./types"
+import { MACROS, macroTotals, targetFor, type Macro } from "./food"
+import type { Exercise, FoodEntry, Kind, MacroTargets, Reading, SetEntry, Tracker } from "./types"
 
 export interface DayEntry {
   exercise: Exercise
@@ -139,8 +140,17 @@ function round(n: number): number {
   return Math.round(n * 1000) / 1000
 }
 
+/* ── Food ────────────────────────────────────────────────────────────────────── */
+
+/** A day's food, oldest first — the order you ate it. */
+export function dayFoods(all: FoodEntry[], date: string): FoodEntry[] {
+  return all
+    .filter((f) => f.date === date)
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+}
+
 export interface Progress {
-  tracker: Tracker
+  macro: Macro
   /** Logged so far today. Zero when nothing has been logged, so the ring still draws empty. */
   total: number
   target: number
@@ -149,22 +159,23 @@ export interface Progress {
 }
 
 /**
- * Ring data for the trackers that can have a ring.
+ * Ring data for the day's macros, in the order `MACROS` declares.
  *
- * A tracker without a target is skipped rather than drawn at zero. An arc is a fraction of
- * something; with no denominator there is nothing truthful to draw, so those render as a plain
- * number instead.
+ * A macro with no target is skipped rather than drawn at zero. An arc is a fraction of something;
+ * with no denominator there is nothing truthful to draw.
  */
 export function dayProgress(
-  all: Reading[],
-  trackers: Tracker[],
+  all: FoodEntry[],
+  targets: MacroTargets,
   date: string,
 ): Progress[] {
+  const totals = macroTotals(dayFoods(all, date))
   const out: Progress[] = []
-  for (const tracker of trackers) {
-    if (tracker.target === undefined || tracker.target <= 0) continue
-    const total = dayTotal(all, tracker, date) ?? 0
-    out.push({ tracker, total, target: tracker.target, fraction: total / tracker.target })
+  for (const macro of MACROS) {
+    const target = targetFor(targets, macro.key)
+    if (target === undefined) continue
+    const total = totals[macro.key]
+    out.push({ macro, total, target, fraction: total / target })
   }
   return out
 }
@@ -172,6 +183,10 @@ export function dayProgress(
 /** Day keys that have at least one reading, newest first. Feeds the date picker's dots. */
 export function readingDays(all: Reading[]): string[] {
   return [...new Set(all.map((r) => r.date))].sort((a, b) => b.localeCompare(a))
+}
+
+export function foodDays(all: FoodEntry[]): string[] {
+  return [...new Set(all.map((f) => f.date))].sort((a, b) => b.localeCompare(a))
 }
 
 /**

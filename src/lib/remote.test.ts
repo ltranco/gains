@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { applyPull, mergeTrackers, planPush, pushLog } from "./remote"
-import { syncReadings, syncSets, type Syncable } from "./samples"
+import { syncFoods, syncReadings, syncSets, type Syncable } from "./samples"
 import { EMPTY_STATE } from "./store"
 import { allTrackers } from "./trackers"
 import type { PullOutcome } from "./remote"
-import type { Reading, RemoteConfig, SetEntry, Tracker } from "./types"
+import type { FoodEntry, Reading, RemoteConfig, SetEntry, Tracker } from "./types"
 
 /**
  * Pushing is the one part of this that can corrupt the store, because the store can't be
@@ -43,10 +43,22 @@ const aSet = (over: Partial<SetEntry> = {}): SetEntry => ({
 
 const aReading = (over: Partial<Reading> = {}): Reading => ({
   id: "r1",
-  trackerId: "calories",
+  trackerId: "waist",
   date: "2026-08-02",
   loggedAt: "2026-08-02T15:12:00.000Z",
-  value: 620,
+  value: 81.5,
+  ...over,
+})
+
+const aFood = (over: Partial<FoodEntry> = {}): FoodEntry => ({
+  id: "f1",
+  date: "2026-08-02",
+  loggedAt: "2026-08-02T15:12:00.000Z",
+  name: "Chicken bowl",
+  kcal: 620,
+  proteinG: 48,
+  carbsG: 61,
+  fatG: 22,
   ...over,
 })
 
@@ -108,7 +120,7 @@ describe("an edited entry settles instead of re-syncing forever", () => {
   })
 })
 
-describe("readings go down the same pipe", () => {
+describe("food and metrics go down the same pipe", () => {
   it("pushes once and then has nothing to say", async () => {
     captureFetch()
     const items = syncReadings([aReading()], TRACKERS)
@@ -124,29 +136,68 @@ describe("readings go down the same pipe", () => {
     const bodies = captureFetch()
     const first = await pushLog(CONFIG, syncReadings([aReading()], TRACKERS))
     if (!first.ok) return
-    const landed = Object.keys(bodies[0]?.calories_kcal ?? {})[0]
+    const landed = Object.keys(bodies[0]?.waist_cm ?? {})[0]
 
     bodies.length = 0
     const second = await pushLog(first.value.config, [])
     if (!second.ok) return
     expect(second.value.tombstones[0]?.replaced).toBe(false)
-    expect(Object.keys(bodies[0]?.calories_deleted ?? {})[0]).toBe(landed)
+    expect(Object.keys(bodies[0]?.waist_deleted ?? {})[0]).toBe(landed)
   })
 
-  it("carries sets and readings in one push", async () => {
+  it("tombstones all four of a deleted food's series", async () => {
+    // A food is one entry across four series. Voiding one and leaving three would leave the store
+    // holding a meal with no calories rather than no meal.
     const bodies = captureFetch()
-    const items: Syncable[] = [...syncSets([aSet()]), ...syncReadings([aReading()], TRACKERS)]
+    const first = await pushLog(CONFIG, syncFoods([aFood()]))
+    if (!first.ok) return
+    const landed = Object.keys(bodies[0]?.calories_kcal ?? {})[0]
+
+    bodies.length = 0
+    const second = await pushLog(first.value.config, [])
+    if (!second.ok) return
+    expect(second.value.tombstones[0]?.prefixes.sort()).toEqual([
+      "calories",
+      "carbs",
+      "fat",
+      "protein",
+    ])
+    for (const metric of ["calories_deleted", "protein_deleted", "carbs_deleted", "fat_deleted"]) {
+      expect(Object.keys(bodies[0]?.[metric] ?? {})[0], metric).toBe(landed)
+    }
+  })
+
+  it("does not re-push a food whose name changed", async () => {
+    // The name isn't stored remotely, so renaming a meal cannot make the remote copy stale — and
+    // must not cost a retraction and a rewrite.
+    captureFetch()
+    const first = await pushLog(CONFIG, syncFoods([aFood()]))
+    if (!first.ok) return
+    const renamed = planPush(first.value.config, syncFoods([aFood({ name: "Lunch" })]))
+    expect(renamed.changed).toEqual([])
+    expect(renamed.tombstones).toEqual([])
+  })
+
+  it("carries all three kinds in one push", async () => {
+    const bodies = captureFetch()
+    const items: Syncable[] = [
+      ...syncSets([aSet()]),
+      ...syncFoods([aFood()]),
+      ...syncReadings([aReading()], TRACKERS),
+    ]
     const res = await pushLog(CONFIG, items)
     expect(res.ok).toBe(true)
     const sent = Object.keys(bodies[0] ?? {})
     expect(sent).toContain("barbell_squat_volume")
     expect(sent).toContain("calories_kcal")
+    expect(sent).toContain("waist_cm")
   })
 })
 
 describe("what a pull does to local state", () => {
   const pulled = (over: Partial<PullOutcome> = {}): PullOutcome => ({
     sets: [],
+    foods: [],
     readings: [],
     recovered: [],
     voided: 0,
@@ -162,11 +213,13 @@ describe("what a pull does to local state", () => {
     const local = {
       ...EMPTY_STATE,
       sets: [aSet({ id: "old" })],
+      foods: [aFood({ id: "old" })],
       readings: [aReading({ id: "old" })],
       prefs: { ...EMPTY_STATE.prefs, units: "imperial" as const },
     }
     const next = applyPull(local, pulled({ sets: [aSet({ id: "new" })] }))
     expect(next.sets.map((s) => s.id)).toEqual(["new"])
+    expect(next.foods).toEqual([])
     expect(next.readings).toEqual([])
     expect(next.prefs.units).toBe("imperial")
   })

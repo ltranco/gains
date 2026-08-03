@@ -16,9 +16,9 @@ Three fields, in Settings:
 | **Read from** | where they're read back. Optional — without it, Pull is unavailable. |
 | **Token** | one bearer token, sent on both. |
 
-What gets logged is configured in the same place: exercises come from a fixed catalog, and the
-metrics logged as a single number — calories, macros, body measurements — are editable, with your
-own added there too.
+What gets logged is configured nearby: exercises come from a fixed catalog, macro targets are a
+preference, and the metrics logged as a single number — a waist measurement, a supplement dose —
+live on their own page, with your own added there.
 
 Both requests are proxied through gains' own `/api/remote` route, so **your endpoint does not
 need to serve CORS headers**. That's the only reason the proxy exists; the token is in
@@ -48,24 +48,28 @@ A JSON object of `metric name → { timestamp → number }`. Nothing else.
   back into the individual sets or meals that made it.
 - Metric name is `<thing>_<suffix>`, where `<thing>` is a display name lowercased with
   non-alphanumerics collapsed to `_` (`Barbell Squat` → `barbell_squat`).
-- Two kinds of entry, distinguished only by the suffix:
+- Three kinds of entry:
   - a **set** contributes `weight` (kg), `reps`, `volume` (kg, = weight × reps), `seconds`,
-    `metres`. Which apply depends on the exercise: a plank sends only `seconds`, a push up only
-    `reps`.
-  - a **reading** — calories, a macro, a body measurement — contributes exactly one sample, under
+    `metres` — several suffixes under one prefix. Which apply depends on the exercise: a plank
+    sends only `seconds`, a push up only `reps`.
+  - a **food** contributes its four macros, one under each of four reserved prefixes:
+    `calories_kcal`, `protein_g`, `carbs_g`, `fat_g`. All four share the food's own instant, and
+    that shared timestamp is the only thing that says they were one meal.
+  - a **metric** — a body measurement, a supplement dose — contributes exactly one sample under
     its own unit: `kcal`, `g`, `mg`, `ml`, `cm`, `count`, `pct`.
-- Names are split at their **last** underscore, and the two suffix sets are disjoint, so every
-  name has exactly one reading. `bench_press_g` can only be prefix `bench_press`, suffix `g`.
+- Names are split at their **last** underscore, and the suffix sets are disjoint, so every name has
+  exactly one reading. `bench_press_g` can only be prefix `bench_press`, suffix `g`.
 - Timestamps are **RFC3339 with milliseconds and a real local offset**. Epoch numbers are not
   used, deliberately — see trap 3 below.
 - Everything is SI. Kilograms, seconds, metres, centimetres. Never imperial.
-- Several samples may share one timestamp across *different* metrics on purpose: a meal is
-  calories plus three macros logged at one instant.
+- Several samples sharing one timestamp across different metrics is meaningful, not incidental —
+  it is what makes a meal one meal. A backend must not coalesce or re-stamp them.
 - Requests are batched at 150 entries each to stay under a 1MB body limit.
 
 gains never writes `weight` or `step` (or, with the reference backend's prefix, `health_weight`
 and `health_step`). Those are HealthKit's, pushed by an iOS Shortcut, and a backend may hold them
-alongside these without gains touching or misreading them.
+alongside these without gains touching or misreading them. `calories`, `protein`, `carbs` and `fat`
+are the other way round: they belong to food, and no user-defined metric may claim one.
 
 A response body of `{"written": N}` is surfaced in the UI if present. Any 2xx is treated as
 success.
@@ -84,17 +88,18 @@ Expected response is **VictoriaMetrics export format**: JSON Lines, one object p
 {"metric":{"__name__":"health_barbell_squat_volume"},"values":[500,500,315],"timestamps":[...]}
 ```
 
-A set is reassembled by joining every measure that shares one timestamp under one exercise
-prefix. A reading is a single value, so it needs no join. The `health_` prefix is tolerated but
-not required — it's what the reference backend's shim prepends.
+A set is reassembled by joining every measure that shares one timestamp under one exercise prefix;
+a food by joining the four macro series at one timestamp. A metric is a single value, so it needs no
+join. The `health_` prefix is tolerated but not required — it's what the reference backend's shim
+prepends.
 
 Series that don't match the suffixes are ignored, so a backend holding unrelated metrics
 alongside these is fine — `health_step` and `health_weight` have no second underscore and never
 match. Prefixes naming no known exercise are counted and skipped.
 
-A prefix carrying a *reading* suffix that names no known metric is different: the suffix is proof
-gains wrote it, so the definition is rebuilt rather than dropped, with the slug title-cased and
-its type guessed. That is the one thing a pull can recover that a number store shouldn't be able
+A prefix carrying a *metric* suffix that names nothing known is different: the suffix is proof gains
+wrote it, so the definition is rebuilt rather than dropped, with the slug title-cased and its type
+guessed. That is the one thing a pull can recover that a number store shouldn't be able
 to — and it's why losing local storage isn't losing your custom metrics.
 
 ## Deleting, without a delete
@@ -105,8 +110,16 @@ stamped at the voided entry's own timestamp.
 
 ```
 health_barbell_squat_deleted  1  @ 09:14:03   <- voids whatever is at 09:14:03
-health_calories_deleted       1  @ 08:12:00
+health_calories_deleted       1  @ 08:12:00   <- one per series, so a deleted food
+health_protein_deleted        1  @ 08:12:00      writes four of these
+health_carbs_deleted          1  @ 08:12:00
+health_fat_deleted            1  @ 08:12:00
 ```
+
+**One tombstone per series the entry wrote.** A food touched four, so all four are retracted;
+voiding one and leaving three would leave the store holding a meal with no calories rather than no
+meal. It costs four samples where a single marker would cost one, and buys exactly one rule for
+every reader to replay.
 
 The timestamp is the identifier, so nothing depends on a value surviving float formatting. Every
 reader replays the same rule — fetch the tombstones, drop the samples they point at — which is why
@@ -128,8 +141,9 @@ The reference implementation is append-only, and gains is built to tolerate that
 2. **Reads may lag writes.** Roughly 10–15 seconds for the reference backend, longer for
    back-dated samples. gains does not treat a missing recent entry as loss.
 3. **Text need not be stored.** `note` is dropped and `id` is regenerated on pull, because the
-   reference backend stores numbers only. A custom metric's name and type go the same way, and are
-   guessed back from its slug.
+   reference backend stores numbers only. A food's **name** goes the same way — a pulled meal is its
+   macros and nothing else, and the app labels it "Food". A custom metric's name and type also go,
+   and are guessed back from its slug.
 
 ## What a backend must not do
 

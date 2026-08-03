@@ -4,9 +4,9 @@ Guidance for Claude Code working in this repo. Read this before touching anythin
 
 ## What this is
 
-A workout log that also tracks what you ate. Pick an exercise, log sets; log calories and
+A workout log that also tracks what you ate. Pick an exercise, log sets; log the food, with its
 macros; see the day. No stats, no programme builder — the daily view is the product. The only
-chart is the nutrition rings, and they show today, not a trend.
+chart is the macro rings, and they show today, not a trend.
 
 Next.js 16 (App Router) · React 19 · TypeScript strict · Tailwind v4 · **yarn**. Deployed to
 Vercel. State lives in the browser; a user-configured URL reads and writes it as JSON.
@@ -37,12 +37,13 @@ Node 20.
 
 | Path | |
 | --- | --- |
-| `src/lib/types.ts` | domain types; `Kind`, `Group`, `Equipment`, `SetEntry`, `Tracker`, `Reading`, `Prefs` |
+| `src/lib/types.ts` | domain types; `SetEntry`, `FoodEntry`, `Reading`, `Tracker`, `Prefs` |
 | `src/lib/catalog.ts` | the exercise catalog — movement × equipment, curated by hand |
-| `src/lib/trackers.ts` | the metric catalog — calories, macros, waist, plus custom ones |
+| `src/lib/food.ts` | the four macros, and what a logged food is |
+| `src/lib/trackers.ts` | the metric catalog — waist, plus whatever you add |
 | `src/lib/store.ts` | localStorage read/write, versioned; remote config under its own key |
 | `src/lib/select.ts` | derived views: day grouping, prefill lookup, recents, day totals, ring progress |
-| `src/lib/samples.ts` | the wire format both kinds of entry go through — `Syncable` |
+| `src/lib/samples.ts` | the wire format all three kinds of entry go through — `Syncable` |
 | `src/lib/units.ts` | SI ↔ display conversion, formatting, parsing |
 | `src/lib/date.ts` | local day keys, day labels, clock formatting |
 | `src/lib/remote.ts` | load/save against the configured URL, via `/api/remote` |
@@ -91,21 +92,39 @@ Node 20.
    each other down a column, so they get tabular figures and a flatter, heavier face than
    Inter's.
 
-9. **There are two kinds of thing to log, and one pipeline.** A `SetEntry` belongs to an
-   exercise and carries up to three measures; a `Reading` belongs to a `Tracker` and carries
-   exactly one number. Both become a `Syncable` in `lib/samples.ts` — prefix, instant, values by
-   suffix — and everything downstream is written once against that. Don't add a second copy of
-   the push path; the millisecond nudging, RFC3339 stamping and tombstone rules took too long to
-   get right to have two of them.
+9. **There are three kinds of thing to log, and one pipeline.** A `SetEntry` belongs to an
+   exercise and carries up to three measures under one prefix; a `FoodEntry` carries four macros
+   under four prefixes; a `Reading` belongs to a `Tracker` and carries one number. All three
+   become a `Syncable` in `lib/samples.ts` — an instant, a collision group, and values keyed by
+   full metric name — and everything downstream is written once against that. Don't add a second
+   copy of the push path; the millisecond nudging, RFC3339 stamping and tombstone rules took too
+   long to get right to have two of them.
 
-10. **gains never writes `health_weight` or `health_step`.** An iOS Shortcut already pushes those
+   `Syncable.group` is what makes food work. Nudging colliding timestamps happens per *group*, not
+   per series, so two meals logged in the same millisecond move apart **together** and each keeps
+   its four macros on one instant. Nudge the series independently and one meal's protein lands on
+   the other's timestamp; both then reassemble wrong, and nothing about the stored data says so.
+
+10. **Macros are not metrics.** Calories, protein, carbs and fat are fields of a `FoodEntry`.
+    An earlier version made them four separate trackers you logged independently, which meant
+    recording one chicken bowl was four trips through a picker and left nothing in the log that
+    remembered it was one bowl. Nobody eats 48 g of protein. It also blocks the thing that comes
+    next: a photo of a plate resolves to one item with four figures, which is exactly a
+    `FoodEntry` and nothing else has to change. Those four prefixes are reserved names.
+
+11. **gains never writes `health_weight` or `health_step`.** An iOS Shortcut already pushes those
     from HealthKit. Two writers on one series means two lines that disagree, and a delete here
     would tombstone a HealthKit sample. `weight`, `step` and `ingest` are reserved slugs and
-    `validateTrackerName` refuses them.
+    `validateTrackerName` refuses them, alongside the four macro names.
 
-11. **A tracker's slug and unit are frozen at creation; its name and target are not.** The slug is
+12. **A metric's slug and unit are frozen at creation; its name and target are not.** The slug is
     the metric prefix and the unit is the suffix, so together they *are* the series name. Renaming
-    is free. Changing either of the other two would orphan every sample already stored.
+    is free — which is also why a food's name is absent from its fingerprint, so retitling a meal
+    costs nothing. Changing a slug or a unit would orphan every sample already stored.
+
+13. **Macro targets live in `Prefs`, not in the log.** They're a preference: nothing is recorded
+    when you change one, and no target means that ring simply isn't drawn. An arc is a fraction of
+    something.
 
 ## Storage — bring your own
 
@@ -131,15 +150,24 @@ be restored from. The same reasoning covers food: four meals are four samples, n
 Measures by kind: `weight_reps` → `weight`, `reps`, `volume`; `reps` → `reps`;
 `duration` → `seconds`; `distance` → `metres` (+ `seconds` when a time was logged).
 
-A tracker contributes one sample under its own unit: `kcal`, `g`, `mg`, `ml`, `cm`, `count`,
-`pct`. So `health_calories_kcal`, `health_protein_g`, `health_waist_cm`.
+A food contributes one sample per macro, all at its own instant — `health_calories_kcal`,
+`health_protein_g`, `health_carbs_g`, `health_fat_g`. Four series rather than one, because that's
+what a dashboard wants to sum; one timestamp, because that's what lets a reader join them back into
+a single meal.
+
+A metric contributes one sample under its own unit: `kcal`, `g`, `mg`, `ml`, `cm`, `count`, `pct`.
+So `health_waist_cm`, `health_creatine_g`.
 
 **The naming scheme is unambiguous by construction.** Metric names split at their *last*
 underscore, so `bench_press_g` can only ever be prefix `bench_press` plus suffix `g`. Because the
 tracker units are disjoint from the exercise measures, the suffix alone says which kind of entry
 it is — and two things can only collide by sharing a prefix outright, which
 `validateTrackerName` refuses. `_deleted` is the sharp edge: it names no measure, so an exercise
-and a tracker sharing a prefix would void each other's samples.
+and a metric sharing a prefix would void each other's samples.
+
+**Deleting writes one tombstone per series the entry wrote**, so a removed food voids all four of
+its macros. Four samples where a single `food_deleted` marker would cost one — and worth it, because
+every reader already replays exactly one rule: drop whatever sits at `prefix@timestamp`.
 
 **No `_sets` metric.** `count_over_time(x_volume[1d])` already is the set count, and a stored
 copy could only disagree with it.
@@ -225,9 +253,12 @@ Verified against real VictoriaMetrics on the production flags, the real shim fro
    same Go shim and the same `-dedup.minScrapeInterval=1ms` that make the traps above real. That
    is where the sync layer was actually verified.
 
-6. **A translucent arc over an opaque arc of the same hue is invisible.** The over-target second
-   lap looked like a plain full ring until the lap *underneath* was dimmed instead. If you touch
-   the rings, look at a screenshot at 1.3× target — this is not visible in any test.
+6. **The over-target ring took three goes, and only a screenshot could judge any of them.** A
+   translucent arc over an opaque arc of the same hue is invisible — it's just that hue. Dimming
+   the lap underneath made it visible but said the wrong thing: at 1.2× the only bright arc left
+   was the 20% overflow, so a day well past its target read as barely started. What works is a
+   full-strength completed lap with the overflow tinted towards white. If you touch the rings, look
+   at a screenshot at 1.3×.
 
 ## Tests
 
@@ -245,11 +276,12 @@ would have caught the last thing that broke in that file.
 | `date.test.ts` | UTC day drift, `loggedAt` ignoring the selected day, DST either side, 24-hour stamps |
 | `units.test.ts` | imperial display corrupting stored kg or cm, comma grouping breaking re-parse, a blank field parsing as zero |
 | `catalog.test.ts` | duplicate metric prefixes, kind misclassification, fuzzy ranking |
-| `trackers.test.ts` | one metric name producible two ways, HealthKit's slugs being claimed, a rename moving a slug |
-| `samples.test.ts` | wrong measures per kind, colliding timestamps, `health_weight` being mistaken for ours, round trip through export for both kinds |
-| `store.test.ts` | a field saved but not parsed back (this is what silently emptied "Read from"), a v1 document losing its sets |
+| `trackers.test.ts` | one metric name producible two ways, HealthKit's or a macro's slug being claimed, a rename moving a slug |
+| `food.test.ts` | a row summary that bleeds, sum-vs-day totals, a ring drawn with no target |
+| `samples.test.ts` | wrong measures per kind, colliding timestamps tearing a meal in half, `health_weight` being mistaken for ours, round trip through export for all three kinds |
+| `store.test.ts` | a field saved but not parsed back (this is what silently emptied "Read from"), a v1 document losing its sets, an old single-prefix push record being dropped |
 | `select.test.ts` | personal records, day grouping, sum-vs-point totals, a ring drawn with no target |
-| `remote.test.ts` | an edited entry looking edited forever, a tombstone landing on the wrong timestamp, a pull overwriting a local tracker definition |
+| `remote.test.ts` | an edited entry looking edited forever, a tombstone landing on the wrong timestamp or missing three of a food's four series, a renamed food costing a retraction, a pull overwriting a local metric definition |
 
 **The TZ is pinned** in the npm script. Several date tests are meaningless at UTC, and CI
 would otherwise disagree with your laptop.

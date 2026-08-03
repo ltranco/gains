@@ -1,8 +1,10 @@
 import { CATALOG, byId, displayName } from "./catalog"
 import { rfc3339Local } from "./date"
+import { MACROS, macroByPrefix, valueOf, type Macro } from "./food"
 import {
   TRACKER_UNITS,
   type Exercise,
+  type FoodEntry,
   type Reading,
   type SetEntry,
   type Tracker,
@@ -111,17 +113,28 @@ function round(n: number): number {
 }
 
 /**
- * One thing to push: which series it belongs to, when, and what numbers it carries.
+ * One thing to push: when it happened, and which metrics carry which numbers.
  *
- * `values` is keyed by metric suffix, so a set holds up to three entries and a reading holds
- * exactly one. Nothing past this point needs to know which it was looking at.
+ * `values` is keyed by the **full metric name**, because the three kinds of entry don't agree on
+ * how many prefixes they touch. A set writes several suffixes under one prefix; a reading writes
+ * one of each; a food writes one suffix under each of four prefixes. Keying by the whole name is
+ * the only shape all three fit, and it means nothing downstream has to know which it's looking at.
  */
 export interface Syncable {
   /** Local id, so push bookkeeping can be keyed by it. */
   id: string
   loggedAt: string
-  prefix: string
-  /** suffix -> value */
+  /**
+   * Collision namespace. Two entries in the same group may never share a millisecond; entries in
+   * different groups may, because they write disjoint series.
+   *
+   * For a set and a reading this is just the prefix. For a food it's the shared constant `food`,
+   * which is what keeps its four macros on one timestamp while still nudging two meals logged in
+   * the same millisecond apart together — they have to move in lockstep or the join that
+   * reassembles them breaks.
+   */
+  group: string
+  /** full metric name -> value */
   values: Record<string, number>
   /**
    * Identity as the remote sees it. Changing any value means the remote copy is stale — and
@@ -131,40 +144,81 @@ export interface Syncable {
    * **The format is frozen per kind.** It is compared against fingerprints already recorded in
    * `RemoteConfig.pushed` on the user's device; a different string for the same set would make
    * every already-pushed set look edited and trigger a tombstone-and-rewrite of the entire log.
+   *
+   * A food's name is deliberately absent from it. The name isn't stored remotely, so renaming a
+   * meal cannot make the remote copy stale and must not cost a retraction.
    */
   fp: string
+}
+
+/** The series an entry writes, for tombstoning it later. */
+export function prefixesOf(item: Syncable): string[] {
+  const out = new Set<string>()
+  for (const name of Object.keys(item.values)) {
+    const idx = name.lastIndexOf("_")
+    if (idx > 0) out.add(name.slice(0, idx))
+  }
+  return [...out]
 }
 
 /** A set as one syncable, or null if it carries nothing worth storing. */
 export function syncSet(set: SetEntry): Syncable | null {
   const ex = byId(set.exerciseId)
   if (!ex) return null
-  const values = measuresOf(set, ex)
-  if (Object.keys(values).length === 0) return null
+  const measures = measuresOf(set, ex)
+  const keys = Object.keys(measures) as Measure[]
+  if (keys.length === 0) return null
+  const prefix = prefixOf(ex)
+  const values: Record<string, number> = {}
+  for (const k of keys) values[`${prefix}_${k}`] = measures[k] as number
   return {
     id: set.id,
     loggedAt: set.loggedAt,
-    prefix: prefixOf(ex),
+    group: prefix,
     values,
     // Frozen format: `loggedAt|weight,reps,volume,seconds,metres`, blank for absent.
-    fp: `${set.loggedAt}|${MEASURES.map((k) => values[k] ?? "").join(",")}`,
+    fp: `${set.loggedAt}|${MEASURES.map((k) => measures[k] ?? "").join(",")}`,
   }
 }
 
-/** A reading as one syncable. Its single value lands under the tracker's unit. */
+/** A reading as one syncable. Its single value lands under the metric's unit. */
 export function syncReading(reading: Reading, tracker: Tracker): Syncable | null {
   if (!Number.isFinite(reading.value)) return null
   return {
     id: reading.id,
     loggedAt: reading.loggedAt,
-    prefix: tracker.id,
-    values: { [tracker.unit]: reading.value },
+    group: tracker.id,
+    values: { [`${tracker.id}_${tracker.unit}`]: reading.value },
     fp: `${reading.loggedAt}|${reading.value}`,
   }
 }
 
+/** All four macros of one food, sharing its instant. */
+export function syncFood(food: FoodEntry): Syncable | null {
+  const values: Record<string, number> = {}
+  for (const macro of MACROS) {
+    const v = valueOf(food, macro)
+    if (!Number.isFinite(v)) return null
+    values[`${macro.prefix}_${macro.unit}`] = v
+  }
+  return {
+    id: food.id,
+    loggedAt: food.loggedAt,
+    group: FOOD_GROUP,
+    values,
+    fp: `${food.loggedAt}|${MACROS.map((m) => valueOf(food, m)).join(",")}`,
+  }
+}
+
+/** Not a metric prefix — only a collision namespace. See `Syncable.group`. */
+export const FOOD_GROUP = " food"
+
 export function syncSets(sets: SetEntry[]): Syncable[] {
   return sets.map(syncSet).filter((s): s is Syncable => s !== null)
+}
+
+export function syncFoods(foods: FoodEntry[]): Syncable[] {
+  return foods.map(syncFood).filter((s): s is Syncable => s !== null)
 }
 
 export function syncReadings(readings: Reading[], trackers: Tracker[]): Syncable[] {
@@ -182,10 +236,11 @@ export function syncReadings(readings: Reading[], trackers: Tracker[]): Syncable
 /** Everything the log has to offer the remote, in one list. */
 export function syncablesOf(
   sets: SetEntry[],
+  foods: FoodEntry[],
   readings: Reading[],
   trackers: Tracker[],
 ): Syncable[] {
-  return [...syncSets(sets), ...syncReadings(readings, trackers)]
+  return [...syncSets(sets), ...syncFoods(foods), ...syncReadings(readings, trackers)]
 }
 
 export interface Sample {
@@ -220,11 +275,11 @@ export function samplesFor(items: Syncable[]): Sample[] {
 export function buildSamples(items: Syncable[]): {
   samples: Sample[]
   stampById: Map<string, number>
-  prefixById: Map<string, string>
+  prefixesById: Map<string, string[]>
 } {
   const used = new Map<string, Set<number>>()
   const stampById = new Map<string, number>()
-  const prefixById = new Map<string, string>()
+  const prefixesById = new Map<string, string[]>()
   const out: Sample[] = []
 
   // Stable order so the same input always produces the same nudges.
@@ -239,21 +294,21 @@ export function buildSamples(items: Syncable[]): {
     const stamp = Date.parse(item.loggedAt)
     if (!Number.isFinite(stamp)) continue
 
-    const taken = used.get(item.prefix) ?? new Set<number>()
+    const taken = used.get(item.group) ?? new Set<number>()
     let ms = stamp
     while (taken.has(ms)) ms += 1
     taken.add(ms)
-    used.set(item.prefix, taken)
+    used.set(item.group, taken)
 
     stampById.set(item.id, ms)
-    prefixById.set(item.id, item.prefix)
+    prefixesById.set(item.id, prefixesOf(item))
 
     const at = rfc3339Local(new Date(ms))
     for (const key of keys) {
-      out.push({ metric: `${item.prefix}_${key}`, at, value: item.values[key] as number })
+      out.push({ metric: key, at, value: item.values[key] as number })
     }
   }
-  return { samples: out, stampById, prefixById }
+  return { samples: out, stampById, prefixesById }
 }
 
 /** Samples grouped into the shim's payload shape: metric -> timestamp -> value. */
@@ -280,6 +335,7 @@ export function readSelector(): string {
 
 export type ParsedMetric =
   | { prefix: string; kind: "measure"; measure: Measure }
+  | { prefix: string; kind: "macro"; macro: Macro }
   | { prefix: string; kind: "unit"; unit: TrackerUnit }
   | { prefix: string; kind: "tombstone" }
 
@@ -288,9 +344,13 @@ export type ParsedMetric =
  *
  * The split is always at the *last* underscore, which is what makes the whole naming scheme
  * unambiguous: `bench_press_g` can only be read as prefix `bench_press`, suffix `g`. Because the
- * exercise measures and the tracker units are disjoint sets, the suffix alone says which kind of
+ * exercise measures and the metric units are disjoint sets, the suffix alone says which kind of
  * thing this is — and two things can only ever collide by sharing a prefix outright, which
  * `validateTrackerName` refuses to let happen.
+ *
+ * The four macro prefixes are checked before the metric units, since `calories_kcal` and
+ * `protein_g` are shaped exactly like a custom metric would be. Those names are reserved for
+ * precisely that reason.
  */
 export function parseMetric(name: string): ParsedMetric | null {
   const bare = name.startsWith("health_") ? name.slice("health_".length) : name
@@ -302,6 +362,8 @@ export function parseMetric(name: string): ParsedMetric | null {
   if (MEASURES.includes(suffix as Measure)) {
     return { prefix, kind: "measure", measure: suffix as Measure }
   }
+  const macro = macroByPrefix(prefix)
+  if (macro && macro.unit === suffix) return { prefix, kind: "macro", macro }
   if (TRACKER_UNITS.includes(suffix as TrackerUnit)) {
     return { prefix, kind: "unit", unit: suffix as TrackerUnit }
   }
@@ -314,15 +376,21 @@ export function parseMetric(name: string): ParsedMetric | null {
  * `at` is the millisecond timestamp the entry was originally written at, which is why the push
  * bookkeeping records it: the entry is gone locally, so its own `loggedAt` is no longer around
  * to recompute from.
+ *
+ * One tombstone per series the entry wrote — so deleting a food voids all four of its macros.
+ * That costs four samples where a single `food_deleted` marker would cost one, and buys one rule
+ * instead of two: every reader already drops whatever sits at `prefix@timestamp`.
  */
 export function tombstonePayload(
-  voided: { prefix: string; at: number }[],
+  voided: { prefixes: string[]; at: number }[],
 ): Record<string, Record<string, number>> {
   const payload: Record<string, Record<string, number>> = {}
-  for (const { prefix, at } of voided) {
-    const metric = `${prefix}_${TOMBSTONE}`
-    const byTime = (payload[metric] ??= {})
-    byTime[rfc3339Local(new Date(at))] = 1
+  for (const { prefixes, at } of voided) {
+    for (const prefix of prefixes) {
+      const metric = `${prefix}_${TOMBSTONE}`
+      const byTime = (payload[metric] ??= {})
+      byTime[rfc3339Local(new Date(at))] = 1
+    }
   }
   return payload
 }

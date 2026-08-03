@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { syncSet, syncSets } from "./samples"
-import { dayEntries, dayProgress, dayReadings, dayTotal, personalRecordIds } from "./select"
+import { prefixesOf, syncSet, syncSets } from "./samples"
+import { dayEntries, personalRecordIds } from "./select"
 import { planPush } from "./remote"
-import type { Reading, RemoteConfig, SetEntry, Tracker } from "./types"
+import type { RemoteConfig, SetEntry } from "./types"
 
 let n = 0
 const set = (exerciseId: string, date: string, time: string, rest: Partial<SetEntry>): SetEntry => ({
@@ -113,7 +113,10 @@ describe("push planning", () => {
     pushed: Object.fromEntries(
       sets.map((s) => {
         const item = syncSet(s)!
-        return [s.id, { fp: item.fp, at: Date.parse(s.loggedAt), prefix: item.prefix }]
+        return [
+          s.id,
+          { fp: item.fp, at: Date.parse(s.loggedAt), prefixes: prefixesOf(item) },
+        ]
       }),
     ),
   })
@@ -156,7 +159,10 @@ describe("an edit repairs itself on the next push", () => {
     pushed: Object.fromEntries(
       sets.map((s) => {
         const item = syncSet(s)!
-        return [s.id, { fp: item.fp, at: Date.parse(s.loggedAt), prefix: item.prefix }]
+        return [
+          s.id,
+          { fp: item.fp, at: Date.parse(s.loggedAt), prefixes: prefixesOf(item) },
+        ]
       }),
     ),
   })
@@ -202,90 +208,3 @@ describe("an edit repairs itself on the next push", () => {
   })
 })
 
-describe("a day's readings", () => {
-  const CAL: Tracker = { id: "calories", name: "Calories", unit: "kcal", mode: "sum", nutrition: true, target: 2200 }
-  const WAIST: Tracker = { id: "waist", name: "Waist", unit: "cm", mode: "point" }
-  const UNTARGETED: Tracker = { id: "creatine", name: "Creatine", unit: "g", mode: "sum" }
-
-  let rn = 0
-  const reading = (trackerId: string, date: string, time: string, value: number): Reading => ({
-    id: `r${++rn}`,
-    trackerId,
-    date,
-    loggedAt: `${date}T${time}.000Z`,
-    value,
-  })
-
-  const DAY = () => {
-    rn = 0
-    return [
-      reading("calories", "2026-08-02", "08:12:00", 620),
-      reading("calories", "2026-08-02", "13:40:00", 810),
-      reading("calories", "2026-08-01", "12:00:00", 1000),
-      reading("waist", "2026-08-02", "07:00:00", 82),
-      reading("waist", "2026-08-02", "21:00:00", 81.5),
-    ]
-  }
-
-  it("adds up a sum and takes the last of a point", () => {
-    // Four meals make one calorie total. Two waist measurements make one waist — adding them
-    // would be nonsense and averaging them would invent a number nobody measured.
-    expect(dayTotal(DAY(), CAL, "2026-08-02")).toBe(1430)
-    expect(dayTotal(DAY(), WAIST, "2026-08-02")).toBe(81.5)
-  })
-
-  it("keeps days apart", () => {
-    expect(dayTotal(DAY(), CAL, "2026-08-01")).toBe(1000)
-    expect(dayTotal(DAY(), CAL, "2026-07-31")).toBeUndefined()
-  })
-
-  it("does not let float dust leak into a total", () => {
-    rn = 0
-    const crumbs = [
-      reading("creatine", "2026-08-02", "08:00:00", 0.1),
-      reading("creatine", "2026-08-02", "09:00:00", 0.2),
-    ]
-    expect(dayTotal(crumbs, UNTARGETED, "2026-08-02")).toBe(0.3)
-  })
-
-  it("groups by tracker order, not by when it was logged", () => {
-    // The opposite call from dayEntries. Exercises read as a session; macros are fixed slots,
-    // and having them reorder between days makes the block unreadable at a glance.
-    const groups = dayReadings(DAY(), [CAL, WAIST], "2026-08-02")
-    expect(groups.map((g) => g.tracker.id)).toEqual(["calories", "waist"])
-    expect(groups[0]?.readings).toHaveLength(2)
-    expect(groups[0]?.total).toBe(1430)
-    // A tracker with nothing logged that day isn't a row at all.
-    expect(dayReadings(DAY(), [CAL, WAIST, UNTARGETED], "2026-08-02")).toHaveLength(2)
-  })
-})
-
-describe("ring progress", () => {
-  const CAL: Tracker = { id: "calories", name: "Calories", unit: "kcal", mode: "sum", nutrition: true, target: 2000 }
-  const NO_TARGET: Tracker = { id: "creatine", name: "Creatine", unit: "g", mode: "sum" }
-  const r = (trackerId: string, value: number): Reading => ({
-    id: `${trackerId}-${value}`,
-    trackerId,
-    date: "2026-08-02",
-    loggedAt: "2026-08-02T12:00:00.000Z",
-    value,
-  })
-
-  it("skips a tracker with no target rather than drawing it at zero", () => {
-    // An arc is a fraction of something. With no denominator there is nothing truthful to draw.
-    expect(dayProgress([r("creatine", 5)], [NO_TARGET], "2026-08-02")).toEqual([])
-    expect(dayProgress([], [{ ...CAL, target: 0 }], "2026-08-02")).toEqual([])
-  })
-
-  it("draws an empty ring on a day with nothing logged", () => {
-    const [p] = dayProgress([], [CAL], "2026-08-02")
-    expect(p?.total).toBe(0)
-    expect(p?.fraction).toBe(0)
-  })
-
-  it("reports over target rather than capping it", () => {
-    // Capping would make 3,000 against a 2,000 target look exactly like hitting it.
-    const [p] = dayProgress([r("calories", 3000)], [CAL], "2026-08-02")
-    expect(p?.fraction).toBe(1.5)
-  })
-})

@@ -96,7 +96,7 @@ describe("naming a new metric", () => {
   })
 
   it("refuses a duplicate and a name with nothing in it", () => {
-    expect("error" in validateTrackerName("Protein", BUILTIN_TRACKERS)).toBe(true)
+    expect("error" in validateTrackerName("Waist", BUILTIN_TRACKERS)).toBe(true)
     expect("error" in validateTrackerName("   ", [])).toBe(true)
     expect("error" in validateTrackerName("!!!", [])).toBe(true)
   })
@@ -123,12 +123,12 @@ describe("the slug never moves", () => {
 describe("builtins and stored trackers", () => {
   it("lets a stored copy shadow a builtin without duplicating it", () => {
     const merged = allTrackers([
-      { id: "calories", name: "Calories", unit: "kcal", mode: "sum", nutrition: true, target: 2600 },
+      { id: "waist", name: "Waistline", unit: "cm", mode: "point", target: 80 },
     ])
-    expect(merged.filter((t) => t.id === "calories")).toHaveLength(1)
-    expect(merged.find((t) => t.id === "calories")?.target).toBe(2600)
+    expect(merged.filter((t) => t.id === "waist")).toHaveLength(1)
+    expect(merged.find((t) => t.id === "waist")?.target).toBe(80)
     // Order is the display order, so a shadowed builtin stays where it was.
-    expect(merged[0]?.id).toBe("calories")
+    expect(merged[0]?.id).toBe("waist")
   })
 
   it("appends custom trackers after the builtins", () => {
@@ -161,11 +161,9 @@ describe("rebuilding a tracker from the remote", () => {
 describe("search", () => {
   it("finds a metric by name, in any order, and by unit", () => {
     const all = allTrackers([])
-    expect(searchTrackers("prot", all)[0]?.id).toBe("protein")
-    expect(searchTrackers("cal", all)[0]?.id).toBe("calories")
-    expect(searchTrackers("kcal", all)[0]?.id).toBe("calories")
     // Waist doesn't get a button in the bottom bar, so search is how it's reached.
     expect(searchTrackers("waist", all)[0]?.id).toBe("waist")
+    expect(searchTrackers("cm", all)[0]?.id).toBe("waist")
   })
 
   it("returns nothing for an empty query or nonsense", () => {

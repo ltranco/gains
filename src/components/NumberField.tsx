@@ -126,6 +126,7 @@ export function TextField({
   onChange,
   placeholder,
   autoFocus,
+  freeText = false,
 }: {
   label: string
   hint?: string
@@ -133,6 +134,14 @@ export function TextField({
   onChange: (next: string) => void
   placeholder?: string
   autoFocus?: boolean
+  /**
+   * Actual prose rather than a number in disguise — a food's name.
+   *
+   * Gets the sans face, left alignment and a normal keyboard, and keeps whatever is already there
+   * on focus. The mono, centred, select-all-on-focus treatment is right for a measurement you're
+   * replacing wholesale and wrong for a word you're correcting a letter of.
+   */
+  freeText?: boolean
 }) {
   const id = useId()
   return (
@@ -153,10 +162,16 @@ export function TextField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        inputMode="numeric"
+        inputMode={freeText ? "text" : "numeric"}
         autoComplete="off"
-        onFocus={(e) => e.currentTarget.select()}
-        className="nums w-full rounded-lg border py-2.5 text-center text-[17px] font-medium outline-none placeholder:font-normal placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+        autoCapitalize={freeText ? "sentences" : "none"}
+        enterKeyHint={freeText ? "next" : undefined}
+        onFocus={freeText ? undefined : (e) => e.currentTarget.select()}
+        className={
+          freeText
+            ? "w-full rounded-lg border px-3 py-2.5 text-[16px] outline-none placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+            : "nums w-full rounded-lg border py-2.5 text-center text-[17px] font-medium outline-none placeholder:font-normal placeholder:text-[var(--text-faint)] focus:border-[var(--accent)]"
+        }
         style={{ background: "var(--bg-subtle)" }}
       />
     </div>

@@ -2,26 +2,37 @@
 
 import { useEffect, useState } from "react"
 
+import type { MacroKey } from "@/lib/food"
 import type { Progress } from "@/lib/select"
-import type { Tracker, UnitSystem } from "@/lib/types"
-import { trackerUnit, trackerValue } from "@/lib/units"
+import { formatCount } from "@/lib/units"
 
 /**
- * The day's nutrition, as rings.
+ * The day's macros, as rings. One per macro with a target, all the same size.
  *
- * One large ring for the first metric with a target — calories, by the order they're declared —
- * and a small one for each of the rest. A metric with no target isn't here at all: an arc is a
- * fraction of something, and with no denominator there is nothing truthful to draw.
+ * Uniform on purpose. An earlier version drew calories large and the macros small, which implied a
+ * hierarchy that isn't there — you read all four at once, and the odd sizes made the block taller
+ * than the log it sits above. Same diameter, value inside, target underneath.
  *
- * Each ring is a button that opens its own entry sheet, so the fastest way to log protein is to
- * tap the protein ring. That's the reason this block sits above the log rather than below it.
+ * Each ring is a button that opens the food sheet, so tapping a ring is a way to add a meal rather
+ * than a dead end.
  *
  * ## Why the numbers under each ring are not decoration
  *
- * The four hues pass the CVD separation check in the band that is only legal *alongside*
- * secondary encoding. The name and the value are that encoding. Removing them to tidy the block
- * up would make two of the rings indistinguishable to a red-green colourblind reader.
+ * The four hues pass the CVD separation check in the band that is only legal *alongside* secondary
+ * encoding. The label and the target are that encoding. Removing them to tidy the block up would
+ * make two of the rings indistinguishable to a red-green colourblind reader.
  */
+
+const SIZE = 58
+const STROKE = 6
+
+/** Ring hue per macro. Fixed, so calories are always the same colour as yesterday. */
+const HUE: Record<MacroKey, string> = {
+  kcal: "var(--ring-1)",
+  protein: "var(--ring-2)",
+  carbs: "var(--ring-3)",
+  fat: "var(--ring-4)",
+}
 
 /** Sweeps the arcs in from empty on mount. Remount — a new `key` — replays it. */
 function useArmed(): boolean {
@@ -37,48 +48,19 @@ function useArmed(): boolean {
 
 export function Rings({
   progress,
-  units,
-  onPick,
+  onAdd,
 }: {
   progress: Progress[]
-  units: UnitSystem
-  onPick: (tracker: Tracker) => void
+  onAdd: () => void
 }) {
   const armed = useArmed()
   if (progress.length === 0) return null
 
-  const [primary, ...rest] = progress
-
   return (
-    <section className="flex items-center gap-4 border-b px-4 py-3.5">
-      {primary && (
-        <RingCell
-          progress={primary}
-          index={0}
-          size={88}
-          stroke={9}
-          units={units}
-          armed={armed}
-          onPick={onPick}
-        />
-      )}
-
-      {rest.length > 0 && (
-        <div className="flex min-w-0 flex-1 justify-around gap-2">
-          {rest.map((p, i) => (
-            <RingCell
-              key={p.tracker.id}
-              progress={p}
-              index={i + 1}
-              size={46}
-              stroke={6}
-              units={units}
-              armed={armed}
-              onPick={onPick}
-            />
-          ))}
-        </div>
-      )}
+    <section className="flex items-start justify-around gap-1 border-b px-3 py-3">
+      {progress.map((p, i) => (
+        <RingCell key={p.macro.key} progress={p} index={i} armed={armed} onAdd={onAdd} />
+      ))}
     </section>
   )
 }
@@ -86,64 +68,50 @@ export function Rings({
 function RingCell({
   progress,
   index,
-  size,
-  stroke,
-  units,
   armed,
-  onPick,
+  onAdd,
 }: {
   progress: Progress
-  /** Position in the block: picks the hue and staggers the sweep. */
+  /** Staggers the sweep, so the four arrive in sequence rather than as one lump. */
   index: number
-  size: number
-  stroke: number
-  units: UnitSystem
   armed: boolean
-  onPick: (tracker: Tracker) => void
+  onAdd: () => void
 }) {
-  const { tracker, total, target, fraction } = progress
-  const colour = `var(--ring-${(index % 4) + 1})`
-  const large = size > 60
-  const unit = trackerUnit(tracker.unit, units)
+  const { macro, total, target, fraction } = progress
 
   return (
     <button
       type="button"
-      onClick={() => onPick(tracker)}
-      // The accessible name carries what the ring means; the arc itself is aria-hidden.
-      aria-label={`${tracker.name}: ${trackerValue(total, tracker.unit, units)} of ${trackerValue(
-        target,
-        tracker.unit,
-        units,
-      )} ${unit}. Add an entry.`}
-      className="flex min-w-0 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-0.5 transition-colors hover:bg-[var(--bg-hover)]"
+      onClick={onAdd}
+      aria-label={`${macro.label}: ${formatCount(total)} of ${formatCount(target)} ${macro.unit}. Add food.`}
+      className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-0.5 transition-colors hover:bg-[var(--bg-hover)]"
     >
-      <span className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-        <Arc fraction={fraction} size={size} stroke={stroke} colour={colour} armed={armed} delay={index * 90} />
-        {large && (
-          <span className="absolute flex flex-col items-center leading-none">
-            <span className="nums text-[15px]">{trackerValue(total, tracker.unit, units)}</span>
-            <span className="mt-0.5 text-[9px]" style={{ color: "var(--text-faint)" }}>
-              {unit}
-            </span>
-          </span>
-        )}
+      <span
+        className="relative flex shrink-0 items-center justify-center"
+        style={{ width: SIZE, height: SIZE }}
+      >
+        <Arc
+          fraction={fraction}
+          colour={HUE[macro.key]}
+          armed={armed}
+          delay={index * 80}
+        />
+        {/* Inside the ring, always — it's the number you came for. Sized down past four digits
+            so 2,900 kcal doesn't touch the stroke. */}
+        <span
+          className="nums absolute"
+          style={{ fontSize: total >= 1000 ? 12 : 14, letterSpacing: "-0.04em" }}
+        >
+          {formatCount(total)}
+        </span>
       </span>
 
-      <span className="flex flex-col items-center leading-tight">
-        <span
-          className={`max-w-[72px] truncate ${large ? "text-[12px]" : "text-[10px]"}`}
-          style={{ color: "var(--text-muted)" }}
-        >
-          {tracker.name}
+      <span className="flex min-w-0 flex-col items-center leading-tight">
+        <span className="max-w-full truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {macro.label}
         </span>
-        <span
-          className={`nums-quiet ${large ? "text-[11px]" : "text-[10px]"}`}
-          style={{ color: "var(--text-faint)" }}
-        >
-          {large
-            ? `of ${trackerValue(target, tracker.unit, units)}`
-            : `${trackerValue(total, tracker.unit, units)}/${trackerValue(target, tracker.unit, units)}`}
+        <span className="nums-quiet text-[10px]" style={{ color: "var(--text-faint)" }}>
+          / {formatCount(target)}
         </span>
       </span>
     </button>
@@ -154,70 +122,68 @@ function RingCell({
  * One arc. `stroke-dasharray` is the full circumference and `stroke-dashoffset` is how much of it
  * to hide, so the visible sweep is a single animatable number.
  *
- * Over target draws a second lap on top, the way Activity does — capping at full would make 3,000
- * kcal against a 2,000 target look exactly like hitting it.
+ * Over target draws a second lap on top, the way Activity does — capping at full would make 2,900
+ * kcal against a 2,200 target look exactly like hitting it.
  *
- * The completed lap *dims* when a second one starts. Drawing the overflow at partial alpha in the
- * same hue was the obvious thing and it was invisible: a translucent orange arc laid over an
- * opaque orange arc is just orange. Fading the lap underneath is what makes the overflow read as a
- * separate pass rather than a slightly thicker ring.
+ * Getting that lap *visible* took two goes. Drawing it at partial alpha in the same hue was
+ * invisible, because a translucent orange arc over an opaque orange arc is just orange. Dimming the
+ * lap underneath instead made it visible but said the wrong thing: at 1.2× the only bright arc left
+ * was the 20% overflow, so a day well past its target read at a glance as barely started. What
+ * works is keeping the completed lap at full strength and tinting the overflow towards white — the
+ * ring stays emphatically full, and the pale arc on top is the "and then some".
  */
 function Arc({
   fraction,
-  size,
-  stroke,
   colour,
   armed,
   delay,
 }: {
   fraction: number
-  size: number
-  stroke: number
   colour: string
   armed: boolean
   delay: number
 }) {
-  const r = (size - stroke) / 2
+  const r = (SIZE - STROKE) / 2
   const c = 2 * Math.PI * r
   const first = Math.min(Math.max(fraction, 0), 1)
   const second = Math.min(Math.max(fraction - 1, 0), 1)
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
       {/* Twelve o'clock start, clockwise, like every dial anyone has ever read. */}
-      <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+      <g transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}>
         <circle
-          cx={size / 2}
-          cy={size / 2}
+          cx={SIZE / 2}
+          cy={SIZE / 2}
           r={r}
           fill="none"
           stroke="var(--ring-track)"
-          strokeWidth={stroke}
+          strokeWidth={STROKE}
         />
         <circle
           className="ring-arc"
-          cx={size / 2}
-          cy={size / 2}
+          cx={SIZE / 2}
+          cy={SIZE / 2}
           r={r}
           fill="none"
           stroke={colour}
-          strokeWidth={stroke}
+          strokeWidth={STROKE}
           // A round cap at zero would draw a stray dot on an empty ring.
           strokeLinecap={first > 0.001 ? "round" : "butt"}
           strokeDasharray={c}
           strokeDashoffset={armed ? c * (1 - first) : c}
-          opacity={second > 0 ? 0.32 : 1}
           style={{ transitionDelay: `${delay}ms` }}
         />
         {second > 0 && (
           <circle
             className="ring-arc"
-            cx={size / 2}
-            cy={size / 2}
+            cx={SIZE / 2}
+            cy={SIZE / 2}
             r={r}
             fill="none"
-            stroke={colour}
-            strokeWidth={stroke}
+            // Same hue pulled towards white, so it reads over the lap it sits on in either theme.
+            stroke={`color-mix(in oklab, ${colour} 42%, white)`}
+            strokeWidth={STROKE}
             strokeLinecap="round"
             strokeDasharray={c}
             strokeDashoffset={armed ? c * (1 - second) : c}

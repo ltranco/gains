@@ -1,15 +1,21 @@
 import { CATALOG } from "./catalog"
+import { MACRO_PREFIXES } from "./food"
 import { fuzzyScoreTerms } from "./fuzzy"
 import { prefixOf, slug } from "./samples"
 import type { Tracker, TrackerUnit } from "./types"
 
 /**
- * Trackers: the things you log as one number rather than as a set. Calories, protein, waist.
+ * Metrics: the things you log as one number. A waist measurement, a creatine dose.
  *
  * The counterpart to `lib/catalog.ts`, and deliberately much smaller. An exercise needs two axes
- * because a movement is done with different implements; a tracker is just a name, a unit, and how
+ * because a movement is done with different implements; a metric is just a name, a unit, and how
  * a day's entries collapse. Everything else about it — how it's pushed, how it comes back, how a
  * deletion propagates — is the machinery the exercise log already had.
+ *
+ * **Macros are not metrics.** Calories, protein, carbs and fat are fields of a `FoodEntry`, not
+ * things you log independently — see `lib/food.ts`. An earlier version had them here as four
+ * trackers, which made recording one chicken bowl four trips through a picker and left nothing in
+ * the log that remembered it was one bowl.
  *
  * ## Builtins vs custom
  *
@@ -30,17 +36,11 @@ import type { Tracker, TrackerUnit } from "./types"
  */
 
 /**
- * Targets ship set rather than blank. A ring needs a whole to be an arc, so shipping them empty
- * would mean the rings show nothing at all until you've been through Settings — a feature that
- * looks broken on first run. These are a lifter's plausible defaults, not a recommendation;
- * Settings changes them.
+ * One shipped example, so the feature isn't an empty list on first run. Everything else is yours.
+ *
+ * Point, not sum: two waist measurements in a day are one waist, not a bigger one.
  */
 export const BUILTIN_TRACKERS: Tracker[] = [
-  { id: "calories", name: "Calories", unit: "kcal", mode: "sum", nutrition: true, target: 2200 },
-  { id: "protein", name: "Protein", unit: "g", mode: "sum", nutrition: true, target: 180 },
-  { id: "carbs", name: "Carbs", unit: "g", mode: "sum", nutrition: true, target: 220 },
-  { id: "fat", name: "Fat", unit: "g", mode: "sum", nutrition: true, target: 70 },
-  // Point, not sum: two waist measurements in a day are one waist, not a bigger one.
   { id: "waist", name: "Waist", unit: "cm", mode: "point" },
 ]
 
@@ -50,10 +50,10 @@ const EXERCISE_PREFIXES: Set<string> = new Set(CATALOG.map(prefixOf))
 /**
  * Slugs that belong to the iOS Shortcut's half of the store.
  *
- * `ingest` is the shim's own heartbeat. All three are single-token names, which is why the
- * exercise read selector never saw them; a tracker claiming one would start writing to them.
+ * `ingest` is the shim's own heartbeat. All three are single-token names, which is why the read
+ * selector never saw them; a metric claiming one would start writing to them.
  */
-const RESERVED = new Set(["weight", "step", "ingest"])
+const HEALTHKIT = new Set(["weight", "step", "ingest"])
 
 /**
  * Builtins with stored copies shadowing them, then anything custom, in creation order.
@@ -79,16 +79,6 @@ export function isBuiltin(id: string): boolean {
   return BUILTIN_TRACKERS.some((b) => b.id === id)
 }
 
-/** Nutrition trackers, in order. These are what the Food button and the rings show. */
-export function nutritionTrackers(trackers: Tracker[]): Tracker[] {
-  return trackers.filter((t) => t.nutrition)
-}
-
-/** Everything else — body measurements and whatever else you've added. */
-export function otherTrackers(trackers: Tracker[]): Tracker[] {
-  return trackers.filter((t) => !t.nutrition)
-}
-
 /**
  * A name to the id it would get, or why it can't have one.
  *
@@ -112,8 +102,11 @@ export function validateTrackerName(
   const id = slug(trimmed)
   if (!id) return { error: "The name needs a letter or a number in it." }
 
-  if (RESERVED.has(id)) {
+  if (HEALTHKIT.has(id)) {
     return { error: `Apple Health already logs ${trimmed.toLowerCase()}. Pick another name.` }
+  }
+  if (MACRO_PREFIXES.has(id)) {
+    return { error: `That's a macro — log it on a food instead.` }
   }
   if (EXERCISE_PREFIXES.has(id)) {
     return { error: `An exercise is already called that. Pick another name.` }
@@ -150,7 +143,7 @@ export function recoveredTracker(prefix: string, unit: TrackerUnit): Tracker {
 }
 
 /**
- * Fuzzy search across trackers, scored the same way exercises are so one query can rank both.
+ * Fuzzy search across metrics, scored the same way exercises are so one query can rank both.
  *
  * Matches the name and the unit, so "protein" and "kcal" both find something, and an empty query
  * returns nothing — the caller shows its sections instead.

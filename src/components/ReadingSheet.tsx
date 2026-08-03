@@ -32,7 +32,7 @@ export function ReadingSheet({
   editing?: Reading | null
   onClose: () => void
 }) {
-  const { state, addReadings, updateReading, deleteReading } = useStore()
+  const { state, addReading, updateReading, deleteReading } = useStore()
   const units = state.prefs.units
 
   const [value, setValue] = useState("")
@@ -82,7 +82,7 @@ export function ReadingSheet({
         ...(when ? { loggedAt: when.toISOString(), date: toDayKey(when) } : {}),
       })
     } else {
-      addReadings([{ trackerId: tracker.id, date, value: parsed }])
+      addReading({ trackerId: tracker.id, date, value: parsed })
     }
     onClose()
   }

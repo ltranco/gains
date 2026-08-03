@@ -1,8 +1,9 @@
 import { toDayKey } from "./date"
+import { MACROS, type MacroKey } from "./food"
 import { exerciseForPrefix, parseMetric, type Measure } from "./samples"
 import { newId } from "./store"
 import { allTrackers, recoveredTracker } from "./trackers"
-import type { Reading, SetEntry, Tracker, TrackerUnit } from "./types"
+import type { FoodEntry, Reading, SetEntry, Tracker, TrackerUnit } from "./types"
 
 /**
  * Rebuilds the log from VictoriaMetrics' `/api/v1/export` output.
@@ -18,6 +19,8 @@ import type { Reading, SetEntry, Tracker, TrackerUnit } from "./types"
 
 export interface ReconstructResult {
   sets: SetEntry[]
+  /** Rebuilt from their macros. Nameless — the store holds numbers only. */
+  foods: FoodEntry[]
   readings: Reading[]
   /**
    * Trackers rebuilt from series that nothing local knew about. Merged into stored trackers by
@@ -45,7 +48,10 @@ interface ExportLine {
 export function reconstruct(jsonl: string, trackers: Tracker[] = allTrackers([])): ReconstructResult {
   // prefix -> timestamp(ms) -> measure -> value, for exercises
   const grouped = new Map<string, Map<number, Partial<Record<Measure, number>>>>()
-  // prefix -> timestamp(ms) -> value, for trackers. One value per sample, so no join needed.
+  // timestamp(ms) -> macro -> value. Food is joined on the timestamp alone, since its four
+  // series each contribute one number and share the instant that ties them together.
+  const meals = new Map<number, Partial<Record<MacroKey, number>>>()
+  // prefix -> timestamp(ms) -> value, for metrics. One value per sample, so no join needed.
   const scalars = new Map<string, Map<number, number>>()
   // Entries the server has been told to forget, keyed prefix@ms.
   const voided = new Set<string>()
@@ -82,6 +88,18 @@ export function reconstruct(jsonl: string, trackers: Tracker[] = allTrackers([])
     if (split.kind === "tombstone") {
       for (const t of stamps) {
         if (typeof t === "number") voided.add(`${split.prefix}@${t}`)
+      }
+      continue
+    }
+
+    if (split.kind === "macro") {
+      for (let i = 0; i < Math.min(values.length, stamps.length); i++) {
+        const v = values[i]
+        const t = stamps[i]
+        if (typeof v !== "number" || typeof t !== "number") continue
+        const bucket = meals.get(t) ?? {}
+        bucket[split.macro.key] = v
+        meals.set(t, bucket)
       }
       continue
     }
@@ -164,6 +182,25 @@ export function reconstruct(jsonl: string, trackers: Tracker[] = allTrackers([])
     }
   }
 
+  const foods: FoodEntry[] = []
+  for (const [ms, macros] of meals) {
+    // Any one of the four voids the meal: they were written together and are tombstoned together,
+    // so a partial retraction would mean a corrupt store rather than a surviving food.
+    if (MACROS.some((m) => voided.has(`${m.prefix}@${ms}`))) continue
+    const when = new Date(ms)
+    foods.push({
+      id: newId(),
+      date: toDayKey(when),
+      loggedAt: when.toISOString(),
+      // The one thing a number store can never give back.
+      name: "",
+      kcal: macros.kcal ?? 0,
+      proteinG: macros.protein ?? 0,
+      carbsG: macros.carbs ?? 0,
+      fatG: macros.fat ?? 0,
+    })
+  }
+
   const readings: Reading[] = []
   for (const [prefix, byStamp] of scalars) {
     for (const [ms, value] of byStamp) {
@@ -180,10 +217,12 @@ export function reconstruct(jsonl: string, trackers: Tracker[] = allTrackers([])
   }
 
   sets.sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+  foods.sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
   readings.sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
 
   return {
     sets,
+    foods,
     readings,
     recovered: [...recovered.values()],
     voided: voided.size,

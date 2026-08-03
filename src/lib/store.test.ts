@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 
-import { parseState, readRemote, writeRemote } from "./store"
+import { DEFAULT_MACROS, parseState, readRemote, writeRemote } from "./store"
 import type { RemoteConfig } from "./types"
 
 // store.ts is SSR-safe by checking for `window`, so the node environment needs a stand-in.
@@ -22,7 +22,7 @@ describe("remote config survives a round trip", () => {
     token: "abc123",
     autoPush: true,
     lastSyncedAt: "2026-07-31T20:15:00.000Z",
-    pushed: { s1: { fp: "fp1", at: 1785481200000, prefix: "barbell_squat" } },
+    pushed: { s1: { fp: "fp1", at: 1785481200000, prefixes: ["barbell_squat"] } },
   }
 
   it("keeps every field", () => {
@@ -116,7 +116,7 @@ describe("the document grew readings without a migration", () => {
         { id: "r1", trackerId: "creatine", date: "2026-08-02", loggedAt: "x", value: 5 },
       ],
       trackers: [
-        { id: "creatine", name: "Creatine", unit: "g", mode: "sum", target: 5, nutrition: true, recovered: true },
+        { id: "creatine", name: "Creatine", unit: "g", mode: "sum", target: 5, recovered: true },
       ],
       prefs: {},
     })
@@ -127,7 +127,6 @@ describe("the document grew readings without a migration", () => {
       unit: "g",
       mode: "sum",
       target: 5,
-      nutrition: true,
       recovered: true,
     })
     expect(state.readings).toHaveLength(1)
@@ -161,5 +160,74 @@ describe("the document grew readings without a migration", () => {
       trackers: [{ id: "x", name: "X", unit: "g", mode: "nonsense" }],
     })
     expect(parseState(doc).trackers[0]?.mode).toBe("sum")
+  })
+})
+
+describe("food and macro targets survive storage", () => {
+  it("keeps a food whole, and a zero macro as zero", () => {
+    const doc = JSON.stringify({
+      version: 2,
+      foods: [
+        {
+          id: "f1",
+          date: "2026-08-02",
+          loggedAt: "2026-08-02T15:12:00.000Z",
+          name: "Chicken bowl",
+          kcal: 620,
+          proteinG: 48,
+          carbsG: 61,
+          fatG: 0,
+        },
+      ],
+    })
+    expect(parseState(doc).foods[0]).toEqual({
+      id: "f1",
+      date: "2026-08-02",
+      loggedAt: "2026-08-02T15:12:00.000Z",
+      name: "Chicken bowl",
+      kcal: 620,
+      proteinG: 48,
+      carbsG: 61,
+      fatG: 0,
+    })
+  })
+
+  it("defaults a missing macro to zero rather than dropping the meal", () => {
+    const doc = JSON.stringify({
+      version: 2,
+      foods: [{ id: "f1", date: "2026-08-02", loggedAt: "x", name: "", kcal: 400 }],
+    })
+    const [f] = parseState(doc).foods
+    expect(f?.kcal).toBe(400)
+    expect(f?.fatG).toBe(0)
+  })
+
+  it("fills in a target the document predates instead of dropping its ring", () => {
+    // Spreading a stored `macros` object whole would leave `fat` undefined here, and an undefined
+    // target silently removes that ring.
+    const doc = JSON.stringify({ version: 2, prefs: { macros: { kcal: 2600 } } })
+    const macros = parseState(doc).prefs.macros
+    expect(macros.kcal).toBe(2600)
+    expect(macros.fat).toBe(DEFAULT_MACROS.fat)
+  })
+
+  it("drops a junk target without taking the others with it", () => {
+    const doc = JSON.stringify({
+      version: 2,
+      prefs: { macros: { kcal: "lots", protein: 200 } },
+    })
+    const macros = parseState(doc).prefs.macros
+    expect(macros.protein).toBe(200)
+    expect(macros.kcal).toBe(DEFAULT_MACROS.kcal)
+  })
+
+  it("reads an old single-prefix push record as a one-element list", () => {
+    // Written before a food could touch four series at once. Dropping these instead would orphan
+    // the entire remote copy of the log — every set would look unpushed and get re-sent.
+    writeRemote({ url: "u", token: "t" })
+    const raw = JSON.parse(window.localStorage.getItem("gains.remote.v1")!)
+    raw.pushed = { s1: { fp: "x", at: 123, prefix: "barbell_squat" } }
+    window.localStorage.setItem("gains.remote.v1", JSON.stringify(raw))
+    expect(readRemote().pushed?.s1).toEqual({ fp: "x", at: 123, prefixes: ["barbell_squat"] })
   })
 })

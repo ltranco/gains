@@ -1,7 +1,10 @@
 import { TRACKER_UNITS } from "./types"
 import type {
+  FoodEntry,
   GainsState,
+  MacroTargets,
   Prefs,
+  PushRecord,
   Reading,
   RemoteConfig,
   SetEntry,
@@ -26,16 +29,25 @@ import type {
 
 export const STORAGE_KEY = "gains.v1"
 
+/**
+ * Macro targets ship set rather than blank. A ring needs a whole to be an arc, so shipping them
+ * empty would mean the rings show nothing at all until you've been through Settings — a feature
+ * that looks broken on first run. Plausible defaults for a lifter, not a recommendation.
+ */
+export const DEFAULT_MACROS: MacroTargets = { kcal: 2200, protein: 180, carbs: 220, fat: 70 }
+
 export const DEFAULT_PREFS: Prefs = {
   units: "metric",
   theme: "system",
   clock: "24h",
   accent: "indigo",
+  macros: DEFAULT_MACROS,
 }
 
 export const EMPTY_STATE: GainsState = {
   version: 2,
   sets: [],
+  foods: [],
   readings: [],
   trackers: [],
   prefs: DEFAULT_PREFS,
@@ -48,13 +60,21 @@ export function parseState(raw: string | null): GainsState {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== "object" || parsed === null) return EMPTY_STATE
     const doc = parsed as Partial<GainsState>
+    const prefs: Partial<Prefs> = doc.prefs ?? {}
     return {
       version: 2,
       sets: Array.isArray(doc.sets) ? doc.sets.filter(isSetEntry) : [],
-      // A v1 document has neither of these. Absent is empty, not a failure to load.
+      // A v1 document has none of these three. Absent is empty, not a failure to load.
+      foods: Array.isArray(doc.foods) ? doc.foods.flatMap(asFood) : [],
       readings: Array.isArray(doc.readings) ? doc.readings.filter(isReading) : [],
       trackers: Array.isArray(doc.trackers) ? doc.trackers.flatMap(asTracker) : [],
-      prefs: { ...DEFAULT_PREFS, ...(doc.prefs ?? {}) },
+      prefs: {
+        ...DEFAULT_PREFS,
+        ...prefs,
+        // Merged field by field: spreading a stored `macros` whole would drop a default for any
+        // target the document predates, and a missing target silently removes its ring.
+        macros: { ...DEFAULT_MACROS, ...asMacros(prefs.macros) },
+      },
     }
   } catch {
     return EMPTY_STATE
@@ -69,6 +89,43 @@ function isSetEntry(v: unknown): v is SetEntry {
     typeof s.exerciseId === "string" &&
     typeof s.date === "string"
   )
+}
+
+/**
+ * A stored food. Macros default to 0 rather than dropping the entry: a food whose fat was never
+ * recorded is still a food, and a meal vanishing from the log because one field was missing is
+ * worse than one that reads 0 g of fat.
+ */
+function asFood(v: unknown): FoodEntry[] {
+  if (typeof v !== "object" || v === null) return []
+  const f = v as Partial<FoodEntry>
+  if (typeof f.id !== "string" || typeof f.date !== "string") return []
+  const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0)
+  return [
+    {
+      id: f.id,
+      date: f.date,
+      loggedAt: typeof f.loggedAt === "string" ? f.loggedAt : "",
+      name: typeof f.name === "string" ? f.name : "",
+      kcal: num(f.kcal),
+      proteinG: num(f.proteinG),
+      carbsG: num(f.carbsG),
+      fatG: num(f.fatG),
+      ...(typeof f.note === "string" ? { note: f.note } : {}),
+    },
+  ]
+}
+
+/** Targets, field by field. A junk value drops that one target rather than the whole set. */
+function asMacros(raw: unknown): MacroTargets {
+  if (typeof raw !== "object" || raw === null) return {}
+  const m = raw as Record<string, unknown>
+  const out: MacroTargets = {}
+  for (const key of ["kcal", "protein", "carbs", "fat"] as const) {
+    const v = m[key]
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) out[key] = v
+  }
+  return out
 }
 
 function isReading(v: unknown): v is Reading {
@@ -104,7 +161,6 @@ function asTracker(v: unknown): Tracker[] {
       unit: t.unit as TrackerUnit,
       mode: t.mode === "point" ? "point" : "sum",
       ...(typeof t.target === "number" && Number.isFinite(t.target) ? { target: t.target } : {}),
-      ...(t.nutrition === true ? { nutrition: true } : {}),
       ...(t.recovered === true ? { recovered: true } : {}),
     },
   ]
@@ -161,21 +217,30 @@ export function readRemote(): RemoteConfig {
 }
 
 /**
- * Tolerates the older shape, where each entry was a bare fingerprint string with no record of
- * when the samples were written. Those entries can still detect an edit; they just can't be
- * tombstoned, so they're dropped rather than kept in a state that would silently do nothing.
+ * Tolerates two older shapes.
+ *
+ * The first was a bare fingerprint string with no record of when the samples were written. Those
+ * can still detect an edit but can't be tombstoned, so they're dropped rather than kept in a state
+ * that would silently do nothing.
+ *
+ * The second held a single `prefix`, from before a food could write four series at once. One
+ * prefix is a one-element list, and reading it that way keeps every already-pushed set
+ * tombstonable — dropping them instead would orphan the entire remote copy of the log.
  */
-function normalisePushed(
-  raw: unknown,
-): Record<string, { fp: string; at: number; prefix: string }> {
+function normalisePushed(raw: unknown): Record<string, PushRecord> {
   if (typeof raw !== "object" || raw === null) return {}
-  const out: Record<string, { fp: string; at: number; prefix: string }> = {}
+  const out: Record<string, PushRecord> = {}
   for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v !== "object" || v === null) continue
-    const e = v as { fp?: unknown; at?: unknown; prefix?: unknown }
-    if (typeof e.fp === "string" && typeof e.at === "number" && typeof e.prefix === "string") {
-      out[id] = { fp: e.fp, at: e.at, prefix: e.prefix }
-    }
+    const e = v as { fp?: unknown; at?: unknown; prefix?: unknown; prefixes?: unknown }
+    if (typeof e.fp !== "string" || typeof e.at !== "number") continue
+    const prefixes = Array.isArray(e.prefixes)
+      ? e.prefixes.filter((p): p is string => typeof p === "string")
+      : typeof e.prefix === "string"
+        ? [e.prefix]
+        : []
+    if (prefixes.length === 0) continue
+    out[id] = { fp: e.fp, at: e.at, prefixes }
   }
   return out
 }

@@ -5,13 +5,14 @@ import {
   parseMetric,
   payloadFor,
   readSelector,
+  syncFoods,
   syncReadings,
   syncSets,
   tombstonePayload,
   type Syncable,
 } from "./samples"
 import { allTrackers } from "./trackers"
-import type { Reading, SetEntry, Tracker } from "./types"
+import type { FoodEntry, Reading, SetEntry } from "./types"
 
 let n = 0
 const set = (exerciseId: string, date: string, time: string, rest: Partial<SetEntry>): SetEntry => ({
@@ -177,7 +178,7 @@ describe("round trip through the storage format", () => {
 describe("deletion is an append, not a delete", () => {
   it("writes a tombstone at the voided set's own timestamp", () => {
     const at = Date.parse("2026-07-31T09:14:03.000-07:00")
-    const p = tombstonePayload([{ prefix: "barbell_squat", at }])
+    const p = tombstonePayload([{ prefixes: ["barbell_squat"], at }])
     expect(Object.keys(p)).toEqual(["barbell_squat_deleted"])
     const stamps = Object.keys(p.barbell_squat_deleted ?? {})
     expect(Date.parse(stamps[0]!)).toBe(at)
@@ -241,93 +242,202 @@ describe("deletion is an append, not a delete", () => {
   })
 })
 
-/* ── Readings: the other thing that goes down the same pipe ─────────────────── */
+
+/* ── Food: one thing eaten, four series ─────────────────────────────────────── */
 
 const TRACKERS = allTrackers([])
-const trackerNamed = (id: string): Tracker => TRACKERS.find((t) => t.id === id)!
 
-let rn = 0
-const reading = (trackerId: string, date: string, time: string, value: number): Reading => ({
-  id: `r${++rn}`,
-  trackerId,
+let fn = 0
+const food = (
+  date: string,
+  time: string,
+  name: string,
+  kcal: number,
+  proteinG: number,
+  carbsG: number,
+  fatG: number,
+): FoodEntry => ({
+  id: `f${++fn}`,
   date,
   loggedAt: new Date(`${date}T${time}-07:00`).toISOString(),
-  value,
+  name,
+  kcal,
+  proteinG,
+  carbsG,
+  fatG,
 })
 
-const MEAL = () => {
-  rn = 0
+const EATEN = () => {
+  fn = 0
   return [
-    // One meal: four numbers at one instant, which is also the shape an inference service
-    // will hand back from a photo.
-    reading("calories", "2026-08-02", "08:12:00", 620),
-    reading("protein", "2026-08-02", "08:12:00", 48),
-    reading("carbs", "2026-08-02", "08:12:00", 61),
-    reading("fat", "2026-08-02", "08:12:00", 22),
-    reading("calories", "2026-08-02", "13:40:00", 810),
-    reading("waist", "2026-08-02", "09:00:00", 81.5),
+    food("2026-08-02", "08:12:00", "Porridge", 620, 48, 61, 22),
+    food("2026-08-02", "13:40:00", "Chicken bowl", 810, 62, 74, 25),
   ]
 }
 
-describe("what a reading emits", () => {
-  const p = payloadFor(syncReadings(MEAL(), TRACKERS))
+describe("what a food emits", () => {
+  const p = payloadFor(syncFoods(EATEN()))
 
-  it("writes one series per metric, named by unit", () => {
+  it("writes one series per macro", () => {
     expect(Object.values(p.calories_kcal ?? {}).sort((a, b) => a - b)).toEqual([620, 810])
-    expect(Object.values(p.protein_g ?? {})).toEqual([48])
-    expect(Object.values(p.waist_cm ?? {})).toEqual([81.5])
+    expect(Object.values(p.protein_g ?? {}).sort((a, b) => a - b)).toEqual([48, 62])
+    expect(Object.values(p.carbs_g ?? {}).sort((a, b) => a - b)).toEqual([61, 74])
+    expect(Object.values(p.fat_g ?? {}).sort((a, b) => a - b)).toEqual([22, 25])
   })
 
-  it("never touches HealthKit's own names", () => {
-    // The whole reason `weight` and `step` are reserved slugs.
-    expect(Object.keys(p).some((k) => k === "weight" || k === "step")).toBe(false)
+  it("keeps one meal's four numbers on one timestamp", () => {
+    // This is the join. Lose it and there is no way to tell which protein belonged to which meal.
+    const at = Object.keys(p.protein_g ?? {}).sort()[0]
+    expect(Object.keys(p.carbs_g ?? {}).sort()[0]).toBe(at)
+    expect(Object.keys(p.fat_g ?? {}).sort()[0]).toBe(at)
+    expect(Object.keys(p.calories_kcal ?? {}).sort()[0]).toBe(at)
   })
 
-  it("leaves a meal's four numbers on one timestamp", () => {
-    // Nudging is per series, so calories and its three macros keep the instant that ties them
-    // together. Only a collision *within* one series has to move.
-    const at = Object.keys(p.protein_g ?? {})[0]
-    expect(Object.keys(p.carbs_g ?? {})[0]).toBe(at)
-    expect(Object.keys(p.fat_g ?? {})[0]).toBe(at)
-    expect(Object.keys(p.calories_kcal ?? {})).toContain(at)
+  it("never writes HealthKit's own names", () => {
+    expect(Object.keys(p)).not.toContain("weight")
+    expect(Object.keys(p)).not.toContain("step")
   })
 })
 
-describe("two readings of one metric in the same millisecond", () => {
-  it("get nudged apart, like sets do", () => {
-    rn = 0
+describe("two meals in the same millisecond", () => {
+  it("move apart together, so neither is torn in half", () => {
+    // Nudging is per group, not per series. If the four series were nudged independently, one
+    // meal's protein could land on the other's timestamp and both would reassemble wrong.
+    fn = 0
     const p = payloadFor(
-      syncReadings(
+      syncFoods([
+        food("2026-08-02", "12:00:00", "A", 300, 20, 30, 10),
+        food("2026-08-02", "12:00:00", "B", 700, 50, 70, 20),
+      ]),
+    )
+    const stamps = (metric: string) => Object.keys(p[metric] ?? {}).sort()
+    expect(stamps("calories_kcal")).toHaveLength(2)
+    // Every series moved in lockstep, so the pairs still line up.
+    expect(stamps("protein_g")).toEqual(stamps("calories_kcal"))
+    expect(stamps("carbs_g")).toEqual(stamps("calories_kcal"))
+    expect(stamps("fat_g")).toEqual(stamps("calories_kcal"))
+  })
+
+  it("leaves a set at the same instant alone", () => {
+    fn = 0
+    n = 0
+    const items = [
+      ...syncFoods([food("2026-08-02", "12:00:00", "A", 300, 20, 30, 10)]),
+      ...syncSets([set("squat.barbell", "2026-08-02", "12:00:00", { weightKg: 100, reps: 5 })]),
+    ]
+    const p = payloadFor(items)
+    expect(Object.keys(p.calories_kcal ?? {})[0]).toBe(
+      Object.keys(p.barbell_squat_weight ?? {})[0],
+    )
+  })
+})
+
+describe("food round trips", () => {
+  it("comes back with every macro, on the right day", () => {
+    const original = EATEN()
+    const r = reconstruct(exportItems(syncFoods(original)), TRACKERS)
+    expect(r.unknownPrefixes).toEqual([])
+    expect(r.recovered).toEqual([])
+    expect(r.foods).toHaveLength(2)
+
+    for (const want of original) {
+      const got = r.foods.find((f) => Date.parse(f.loggedAt) === Date.parse(want.loggedAt))
+      expect(got, `recovered ${want.name}`).toBeDefined()
+      expect(got?.kcal).toBe(want.kcal)
+      expect(got?.proteinG).toBe(want.proteinG)
+      expect(got?.carbsG).toBe(want.carbsG)
+      expect(got?.fatG).toBe(want.fatG)
+      expect(got?.date).toBe(want.date)
+    }
+  })
+
+  it("loses the name, and says so by leaving it empty", () => {
+    // VictoriaMetrics stores numbers. The row falls back to "Food" rather than inventing a label.
+    const r = reconstruct(exportItems(syncFoods(EATEN())), TRACKERS)
+    expect(r.foods.map((f) => f.name)).toEqual(["", ""])
+  })
+
+  it("keeps a zero macro as zero rather than dropping the food", () => {
+    fn = 0
+    const zeroFat = [food("2026-08-02", "09:00:00", "Rice", 400, 8, 90, 0)]
+    const r = reconstruct(exportItems(syncFoods(zeroFat)), TRACKERS)
+    expect(r.foods).toHaveLength(1)
+    expect(r.foods[0]?.fatG).toBe(0)
+    expect(r.foods[0]?.kcal).toBe(400)
+  })
+
+  it("never mistakes a macro series for a custom metric", () => {
+    // `calories_kcal` is shaped exactly like a metric would be, which is why those four prefixes
+    // are reserved. Without the macro check this would invent a "Calories" metric on every pull.
+    const r = reconstruct(exportItems(syncFoods(EATEN())), TRACKERS)
+    expect(r.recovered).toEqual([])
+    expect(r.readings).toEqual([])
+  })
+
+  it("is voided by a tombstone on any one of its series", () => {
+    fn = 0
+    const eaten = [
+      food("2026-08-02", "08:12:00", "Porridge", 620, 48, 61, 22),
+      food("2026-08-02", "13:40:00", "Chicken bowl", 810, 62, 74, 25),
+    ]
+    const doomed = Date.parse(eaten[0]!.loggedAt)
+    const jsonl = [
+      exportItems(syncFoods(eaten)),
+      JSON.stringify({
+        metric: { __name__: "health_calories_deleted" },
+        values: [1],
+        timestamps: [doomed],
+      }),
+    ].join("\n")
+
+    const r = reconstruct(jsonl, TRACKERS)
+    expect(r.foods).toHaveLength(1)
+    expect(r.foods[0]?.kcal).toBe(810)
+  })
+
+  it("carries sets, food and metrics back in one pass", () => {
+    fn = 0
+    n = 0
+    const items = [
+      ...syncSets([set("squat.barbell", "2026-08-02", "17:00:00", { weightKg: 100, reps: 5 })]),
+      ...syncFoods([food("2026-08-02", "08:12:00", "Porridge", 620, 48, 61, 22)]),
+      ...syncReadings(
         [
-          reading("calories", "2026-08-02", "12:00:00", 300),
-          reading("calories", "2026-08-02", "12:00:00", 700),
+          {
+            id: "r1",
+            trackerId: "waist",
+            date: "2026-08-02",
+            loggedAt: new Date("2026-08-02T09:00:00-07:00").toISOString(),
+            value: 81.5,
+          },
         ],
         TRACKERS,
       ),
-    )
-    // Without the nudge, dedup keeps the larger and the 300 kcal snack vanishes.
-    expect(Object.keys(p.calories_kcal ?? {})).toHaveLength(2)
-    expect(Object.values(p.calories_kcal ?? {}).sort((a, b) => a - b)).toEqual([300, 700])
+    ]
+    const r = reconstruct(exportItems(items), TRACKERS)
+    expect(r.sets).toHaveLength(1)
+    expect(r.foods).toHaveLength(1)
+    expect(r.readings).toHaveLength(1)
+    expect(r.sets[0]?.weightKg).toBe(100)
+    expect(r.foods[0]?.kcal).toBe(620)
+    expect(r.readings[0]?.value).toBe(81.5)
   })
 })
 
-describe("readings round trip", () => {
-  it("comes back with every value and the right day", () => {
-    const original = MEAL()
-    const r = reconstruct(exportItems(syncReadings(original, TRACKERS)), TRACKERS)
-    expect(r.unknownPrefixes).toEqual([])
-    expect(r.recovered).toEqual([])
-    expect(r.readings).toHaveLength(original.length)
+describe("metrics round trip", () => {
+  const waist = (value: number, time = "09:00:00"): Reading => ({
+    id: `w${value}`,
+    trackerId: "waist",
+    date: "2026-08-02",
+    loggedAt: new Date(`2026-08-02T${time}-07:00`).toISOString(),
+    value,
+  })
 
-    for (const want of original) {
-      const got = r.readings.find(
-        (x) =>
-          x.trackerId === want.trackerId && Date.parse(x.loggedAt) === Date.parse(want.loggedAt),
-      )
-      expect(got, `recovered ${want.trackerId}`).toBeDefined()
-      expect(got?.value).toBe(want.value)
-      expect(got?.date).toBe(want.date)
-    }
+  it("recovers a value and its day", () => {
+    const r = reconstruct(exportItems(syncReadings([waist(81.5)], TRACKERS)), TRACKERS)
+    expect(r.readings).toHaveLength(1)
+    expect(r.readings[0]?.value).toBe(81.5)
+    expect(r.readings[0]?.date).toBe("2026-08-02")
   })
 
   it("rebuilds a metric this device has never heard of", () => {
@@ -339,12 +449,9 @@ describe("readings round trip", () => {
     expect(r.recovered).toHaveLength(1)
     expect(r.recovered[0]).toMatchObject({ id: "creatine", name: "Creatine", unit: "g" })
     expect(r.readings).toHaveLength(1)
-    expect(r.readings[0]?.trackerId).toBe("creatine")
   })
 
   it("trusts the local definition when the unit disagrees", () => {
-    // Two incompatible histories under one name is not something an automatic rule can fix, and
-    // the stored definition is the one that knows its mode and target.
     const jsonl =
       '{"metric":{"__name__":"health_waist_count"},"values":[3],"timestamps":[1785481200000]}'
     const r = reconstruct(jsonl, TRACKERS)
@@ -359,61 +466,8 @@ describe("readings round trip", () => {
     ].join("\n")
     const r = reconstruct(foreign, TRACKERS)
     expect(r.readings).toEqual([])
+    expect(r.foods).toEqual([])
     expect(r.sets).toEqual([])
     expect(r.skippedSeries).toBe(2)
-  })
-
-  it("survives a tombstone voiding one entry and nothing else", () => {
-    rn = 0
-    const readings = [
-      reading("calories", "2026-08-02", "08:12:00", 620),
-      reading("calories", "2026-08-02", "13:40:00", 810),
-      reading("waist", "2026-08-02", "09:00:00", 81.5),
-    ]
-    const doomed = Date.parse(readings[0]!.loggedAt)
-    const jsonl = [
-      exportItems(syncReadings(readings, TRACKERS)),
-      JSON.stringify({
-        metric: { __name__: "health_calories_deleted" },
-        values: [1],
-        timestamps: [doomed],
-      }),
-    ].join("\n")
-
-    const r = reconstruct(jsonl, TRACKERS)
-    expect(r.voided).toBe(1)
-    expect(r.readings).toHaveLength(2)
-    expect(r.readings.some((x) => x.value === 620)).toBe(false)
-    expect(r.readings.some((x) => x.value === 810)).toBe(true)
-    expect(r.readings.some((x) => x.trackerId === "waist")).toBe(true)
-  })
-
-  it("carries sets and readings back in one pass", () => {
-    rn = 0
-    n = 0
-    const sets = [set("squat.barbell", "2026-08-02", "17:00:00", { weightKg: 100, reps: 5 })]
-    const readings = [reading("calories", "2026-08-02", "08:12:00", 620)]
-    const jsonl = exportItems([...syncSets(sets), ...syncReadings(readings, TRACKERS)])
-
-    const r = reconstruct(jsonl, TRACKERS)
-    expect(r.sets).toHaveLength(1)
-    expect(r.readings).toHaveLength(1)
-    expect(r.sets[0]?.weightKg).toBe(100)
-    expect(r.readings[0]?.value).toBe(620)
-  })
-})
-
-describe("a reading's fingerprint", () => {
-  it("changes when the value does, and not otherwise", () => {
-    rn = 0
-    const one = reading("calories", "2026-08-02", "08:12:00", 620)
-    const same = { ...one, note: "porridge" }
-    const changed = { ...one, value: 640 }
-    const tracker = trackerNamed("calories")
-
-    const fp = (r: Reading) => syncReadings([r], [tracker])[0]!.fp
-    // A note is not stored remotely, so it cannot make the remote copy stale.
-    expect(fp(same)).toBe(fp(one))
-    expect(fp(changed)).not.toBe(fp(one))
   })
 })

@@ -58,8 +58,8 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   configRef.current = config
   const itemsRef = useRef<Syncable[]>([])
   itemsRef.current = useMemo(
-    () => syncablesOf(state.sets, state.readings, trackers),
-    [state.sets, state.readings, trackers],
+    () => syncablesOf(state.sets, state.foods, state.readings, trackers),
+    [state.sets, state.foods, state.readings, trackers],
   )
   const inFlight = useRef(false)
 

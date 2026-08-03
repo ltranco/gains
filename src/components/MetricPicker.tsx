@@ -2,24 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react"
 
-import { nutritionTrackers, otherTrackers, searchTrackers } from "@/lib/trackers"
+import { searchTrackers } from "@/lib/trackers"
 import type { Tracker, UnitSystem } from "@/lib/types"
 import { trackerUnit } from "@/lib/units"
 import { Sheet } from "./Sheet"
 import { Search } from "./icons"
 
 /**
- * What the Food button opens: nutrition first, everything else below it.
+ * The metrics you log as one number: a waist measurement, a creatine dose.
  *
- * Two sections rather than two entry points. Waist doesn't deserve a button in the bottom bar —
- * it's measured weekly — but it doesn't deserve to be *hidden* either, so it lives one heading
- * down in the sheet the daily thing already opens, and search finds it from the first keystroke.
+ * One flat list, no sections. Deliberately shorter than `ExercisePicker` — there are a handful of
+ * these, not 173, so there's no collapsing and no grouping, and the search is a convenience rather
+ * than the only way through.
  *
- * Deliberately shorter than `ExercisePicker`: there are five trackers, not 173, so there's no
- * collapsing, no grouping by movement, and the search is a convenience rather than the only way
- * through the list.
+ * Reached from a quiet row at the foot of the day rather than from the bottom bar. These are
+ * measured weekly; the two buttons in thumb range belong to the things logged several times a day.
  */
-export function TrackerPicker({
+export function MetricPicker({
   open,
   trackers,
   units,
@@ -41,11 +40,9 @@ export function TrackerPicker({
   }, [open])
 
   const results = useMemo(() => searchTrackers(query, trackers), [query, trackers])
-  const nutrition = useMemo(() => nutritionTrackers(trackers), [trackers])
-  const other = useMemo(() => otherTrackers(trackers), [trackers])
 
   return (
-    <Sheet open={open} onClose={onClose} title="Log food" fullHeight>
+    <Sheet open={open} onClose={onClose} title="Log a metric" fullHeight>
       <div
         className="sticky top-0 z-10 border-b px-3 py-2.5"
         style={{ background: "var(--bg-elevated)" }}
@@ -86,7 +83,7 @@ export function TrackerPicker({
                 No match for “{query}”
               </p>
               <p className="mt-1 text-[12px]" style={{ color: "var(--text-faint)" }}>
-                Add your own in Settings.
+                Add it in Settings.
               </p>
             </div>
           ) : (
@@ -97,43 +94,14 @@ export function TrackerPicker({
             </ul>
           )
         ) : (
-          <>
-            {nutrition.length > 0 && (
-              <section>
-                <SectionLabel>Nutrition</SectionLabel>
-                <ul>
-                  {nutrition.map((t) => (
-                    <TrackerRow key={t.id} tracker={t} units={units} onPick={onPick} />
-                  ))}
-                </ul>
-              </section>
-            )}
-
-            {other.length > 0 && (
-              <section>
-                <SectionLabel>Body &amp; other</SectionLabel>
-                <ul>
-                  {other.map((t) => (
-                    <TrackerRow key={t.id} tracker={t} units={units} onPick={onPick} />
-                  ))}
-                </ul>
-              </section>
-            )}
-          </>
+          <ul>
+            {trackers.map((t) => (
+              <TrackerRow key={t.id} tracker={t} units={units} onPick={onPick} />
+            ))}
+          </ul>
         )}
       </div>
     </Sheet>
-  )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h3
-      className="px-4 pt-4 pb-1.5 text-[11px] font-semibold tracking-[0.06em] uppercase"
-      style={{ color: "var(--text-faint)" }}
-    >
-      {children}
-    </h3>
   )
 }
 

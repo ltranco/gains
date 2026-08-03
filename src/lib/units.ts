@@ -166,6 +166,17 @@ export function trackerUnit(unit: TrackerUnit, u: UnitSystem): string {
   return UNIT_LABEL[unit]
 }
 
+/**
+ * The unit as something to *pick*, rather than to sit beside a number.
+ *
+ * `×` is right after a value — "3×" — and useless in a row of chips you're choosing between, where
+ * it reads as a decoration rather than a word. Everything else is already its own name.
+ */
+export function trackerUnitName(unit: TrackerUnit, u: UnitSystem): string {
+  if (unit === "count") return "count"
+  return trackerUnit(unit, u)
+}
+
 /** Canonical stored value → display number, without a unit suffix. */
 export function trackerValue(value: number, unit: TrackerUnit, u: UnitSystem): string {
   if (unit === "cm" && u === "imperial") return trim(cmToIn(value), 1)
