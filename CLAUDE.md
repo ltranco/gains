@@ -4,8 +4,9 @@ Guidance for Claude Code working in this repo. Read this before touching anythin
 
 ## What this is
 
-A workout log. Pick an exercise, log sets, see the day. No stats, no charts, no programme
-builder — the daily view is the product.
+A workout log that also tracks what you ate. Pick an exercise, log sets; log calories and
+macros; see the day. No stats, no programme builder — the daily view is the product. The only
+chart is the nutrition rings, and they show today, not a trend.
 
 Next.js 16 (App Router) · React 19 · TypeScript strict · Tailwind v4 · **yarn**. Deployed to
 Vercel. State lives in the browser; a user-configured URL reads and writes it as JSON.
@@ -36,10 +37,12 @@ Node 20.
 
 | Path | |
 | --- | --- |
-| `src/lib/types.ts` | domain types; `Kind`, `Group`, `Equipment`, `SetEntry`, `Prefs` |
+| `src/lib/types.ts` | domain types; `Kind`, `Group`, `Equipment`, `SetEntry`, `Tracker`, `Reading`, `Prefs` |
 | `src/lib/catalog.ts` | the exercise catalog — movement × equipment, curated by hand |
+| `src/lib/trackers.ts` | the metric catalog — calories, macros, waist, plus custom ones |
 | `src/lib/store.ts` | localStorage read/write, versioned; remote config under its own key |
-| `src/lib/select.ts` | derived views: day grouping, prefill lookup, recents |
+| `src/lib/select.ts` | derived views: day grouping, prefill lookup, recents, day totals, ring progress |
+| `src/lib/samples.ts` | the wire format both kinds of entry go through — `Syncable` |
 | `src/lib/units.ts` | SI ↔ display conversion, formatting, parsing |
 | `src/lib/date.ts` | local day keys, day labels, clock formatting |
 | `src/lib/remote.ts` | load/save against the configured URL, via `/api/remote` |
@@ -88,6 +91,22 @@ Node 20.
    each other down a column, so they get tabular figures and a flatter, heavier face than
    Inter's.
 
+9. **There are two kinds of thing to log, and one pipeline.** A `SetEntry` belongs to an
+   exercise and carries up to three measures; a `Reading` belongs to a `Tracker` and carries
+   exactly one number. Both become a `Syncable` in `lib/samples.ts` — prefix, instant, values by
+   suffix — and everything downstream is written once against that. Don't add a second copy of
+   the push path; the millisecond nudging, RFC3339 stamping and tombstone rules took too long to
+   get right to have two of them.
+
+10. **gains never writes `health_weight` or `health_step`.** An iOS Shortcut already pushes those
+    from HealthKit. Two writers on one series means two lines that disagree, and a delete here
+    would tombstone a HealthKit sample. `weight`, `step` and `ingest` are reserved slugs and
+    `validateTrackerName` refuses them.
+
+11. **A tracker's slug and unit are frozen at creation; its name and target are not.** The slug is
+    the metric prefix and the unit is the suffix, so together they *are* the series name. Renaming
+    is free. Changing either of the other two would orphan every sample already stored.
+
 ## Storage — bring your own
 
 gains is a **client**. It logs, it draws, it pushes; the data lives wherever you point it.
@@ -104,13 +123,23 @@ pull  GET  <readUrl>?match[]=...   Authorization: Bearer <token>
       -> VictoriaMetrics export JSON Lines
 ```
 
-**One sample per set per measure, stamped at the set's own `loggedAt`** — facts, not summaries.
+**One sample per entry per measure, stamped at its own `loggedAt`** — facts, not summaries.
 A storage layer can only return what it was sent, and a daily total can't tell you it was
 2×100kg×5 rather than 1×200kg×5. This replaced an earlier daily-rollup design that could never
-be restored from.
+be restored from. The same reasoning covers food: four meals are four samples, not one total.
 
 Measures by kind: `weight_reps` → `weight`, `reps`, `volume`; `reps` → `reps`;
 `duration` → `seconds`; `distance` → `metres` (+ `seconds` when a time was logged).
+
+A tracker contributes one sample under its own unit: `kcal`, `g`, `mg`, `ml`, `cm`, `count`,
+`pct`. So `health_calories_kcal`, `health_protein_g`, `health_waist_cm`.
+
+**The naming scheme is unambiguous by construction.** Metric names split at their *last*
+underscore, so `bench_press_g` can only ever be prefix `bench_press` plus suffix `g`. Because the
+tracker units are disjoint from the exercise measures, the suffix alone says which kind of entry
+it is — and two things can only collide by sharing a prefix outright, which
+`validateTrackerName` refuses. `_deleted` is the sharp edge: it names no measure, so an exercise
+and a tracker sharing a prefix would void each other's samples.
 
 **No `_sets` metric.** `count_over_time(x_volume[1d])` already is the set count, and a stored
 copy could only disagree with it.
@@ -136,16 +165,22 @@ exported, and a bearer token has no business travelling inside it.
 Verified against real VictoriaMetrics on the production flags, the real shim from
 `~/dev/metrics/shim`, and the real nginx config. Don't take these on faith; don't undo them.
 
-1. **The store only appends. Edits and deletes do not propagate.** Dedup keeps the *biggest*
-   value on a timestamp tie, so re-sending a corrected set can raise a number but never lower
-   it, and `delete_series` isn't reachable through nginx. `planPush` therefore refuses to
-   re-send a changed set — a half-applied edit, weight rising while reps fall, is worse than a
-   stale one — and Settings reports the count instead.
+1. **The store only appends, so an edit is a retraction plus a rewrite.** Dedup keeps the
+   *biggest* value on a timestamp tie, so re-sending a correction in place can raise a number but
+   never lower it, and `delete_series` isn't reachable through nginx. An edited entry therefore
+   gets a tombstone at its old timestamp and its new values written **at least a millisecond
+   later** — same instant and the retraction swallows the correction too.
 
-2. **Set timestamps must be unique per exercise.** Two samples of one metric in the same
-   millisecond collapse, and the survivor is whichever value is larger. `samplesFor` nudges
-   collisions forward a millisecond each. Different exercises at the same instant are left
-   alone.
+   **The fingerprint recorded in `pushed` must be the local entry's, never the rewritten copy's.**
+   `fp` is computed once when a `Syncable` is built and carried across the rewrite for exactly
+   this reason. Recomputing it from the shifted `loggedAt` made every edited set look edited
+   forever: each push re-tombstoned it, wrote another copy a millisecond further along, and
+   Settings sat on a permanent "1 edited to sync". `remote.test.ts` holds the line.
+
+2. **Timestamps must be unique per series prefix.** Two samples of one metric in the same
+   millisecond collapse, and the survivor is whichever value is larger. `buildSamples` nudges
+   collisions forward a millisecond each. Different prefixes at the same instant are left
+   alone — which is what lets a meal be calories plus three macros on one shared instant.
 
 3. **Timestamps must be RFC3339, never epoch millis.** The shim's `toNanos` does
    `int64(float64 * 1e9)`, and at 1.78e18 the mantissa can't hold nanoseconds: a `+1ms` key
@@ -158,11 +193,14 @@ Verified against real VictoriaMetrics on the production flags, the real shim fro
 
 5. **`note` and `id` do not survive a round trip.** VictoriaMetrics stores numbers only, so
    any textual field is lost and ids are regenerated on pull. This caps what the schema can
-   ever hold.
+   ever hold — and it's why a custom tracker's *name* can't come back either. A pull rebuilds an
+   unknown prefix into a tracker with the slug title-cased and `mode: "sum"` guessed, marked
+   `recovered` so Settings can say the type is a guess rather than pretend it knows.
 
 6. **Pull replaces local state wholesale.** There is no merge, because merging needs a rule for
-   "both sides changed the same set" and inventing one silently is how a log stops matching
-   what happened.
+   "both sides changed the same entry" and inventing one silently is how a log stops matching
+   what happened. Trackers are the exception: those are definitions rather than history, so a
+   rebuilt one is appended and a local one always wins — it knows its mode and target.
 
 ## Traps
 
@@ -181,6 +219,16 @@ Verified against real VictoriaMetrics on the production flags, the real shim fro
 4. **`next dev` started as a tracked background task gets SIGTERMed at turn end.** Launch it
    with `nohup ... & disown` if it needs to outlive the turn.
 
+5. **Don't test the wire format against `metrics.ltran.co`.** It's append-only and its delete API
+   isn't exposed, so a junk sample is there for a hundred years. Stand up the real stack locally
+   instead — the metrics repo's `## Local development` section is four commands, and it runs the
+   same Go shim and the same `-dedup.minScrapeInterval=1ms` that make the traps above real. That
+   is where the sync layer was actually verified.
+
+6. **A translucent arc over an opaque arc of the same hue is invisible.** The over-target second
+   lap looked like a plain full ring until the lap *underneath* was dimmed instead. If you touch
+   the rings, look at a screenshot at 1.3× target — this is not visible in any test.
+
 ## Tests
 
 ```bash
@@ -188,18 +236,20 @@ yarn test          # vitest, TZ pinned to America/Los_Angeles
 yarn test:watch
 ```
 
-79 assertions in `src/lib/*.test.ts`, and they are not decorative: **every one covers a bug
+157 assertions in `src/lib/*.test.ts`, and they are not decorative: **every one covers a bug
 that actually shipped during this project.** Before adding a behaviour, check whether a test
 would have caught the last thing that broke in that file.
 
 | File | Guards against |
 | --- | --- |
 | `date.test.ts` | UTC day drift, `loggedAt` ignoring the selected day, DST either side, 24-hour stamps |
-| `units.test.ts` | imperial display corrupting stored kg, comma grouping breaking re-parse |
+| `units.test.ts` | imperial display corrupting stored kg or cm, comma grouping breaking re-parse, a blank field parsing as zero |
 | `catalog.test.ts` | duplicate metric prefixes, kind misclassification, fuzzy ranking |
-| `samples.test.ts` | wrong measures per kind, colliding timestamps, `health_weight` being mistaken for ours, round trip through export |
-| `store.test.ts` | a config field saved but not parsed back (this is what silently emptied "Read from") |
-| `select.test.ts` | personal records, day grouping, push planning and its idempotence |
+| `trackers.test.ts` | one metric name producible two ways, HealthKit's slugs being claimed, a rename moving a slug |
+| `samples.test.ts` | wrong measures per kind, colliding timestamps, `health_weight` being mistaken for ours, round trip through export for both kinds |
+| `store.test.ts` | a field saved but not parsed back (this is what silently emptied "Read from"), a v1 document losing its sets |
+| `select.test.ts` | personal records, day grouping, sum-vs-point totals, a ring drawn with no target |
+| `remote.test.ts` | an edited entry looking edited forever, a tombstone landing on the wrong timestamp, a pull overwriting a local tracker definition |
 
 **The TZ is pinned** in the npm script. Several date tests are meaningless at UTC, and CI
 would otherwise disagree with your laptop.
