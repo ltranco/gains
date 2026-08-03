@@ -87,3 +87,79 @@ describe("parseState never throws at the user", () => {
     expect(s.prefs.clock).toBe("24h")
   })
 })
+
+describe("the document grew readings without a migration", () => {
+  it("loads a v1 document and keeps every set", () => {
+    // A v1 export has no `readings` and no `trackers`. Absent is empty, not a failure to load —
+    // this is the whole migration.
+    const v1 = JSON.stringify({
+      version: 1,
+      sets: [{ id: "s1", exerciseId: "squat.barbell", date: "2026-07-31", loggedAt: "x", weightKg: 100, reps: 5 }],
+      prefs: { units: "imperial" },
+    })
+    const state = parseState(v1)
+    expect(state.version).toBe(2)
+    expect(state.sets).toHaveLength(1)
+    expect(state.readings).toEqual([])
+    expect(state.trackers).toEqual([])
+    expect(state.prefs.units).toBe("imperial")
+  })
+
+  it("keeps a custom tracker whole through a save and load", () => {
+    // Every field has to be listed in the parser. This is the shape of bug that silently emptied
+    // `readUrl`: written by the writer, absent from the parser, gone on the next load. A target
+    // dropped here means a ring that vanishes the first time the app is reopened.
+    const doc = JSON.stringify({
+      version: 2,
+      sets: [],
+      readings: [
+        { id: "r1", trackerId: "creatine", date: "2026-08-02", loggedAt: "x", value: 5 },
+      ],
+      trackers: [
+        { id: "creatine", name: "Creatine", unit: "g", mode: "sum", target: 5, nutrition: true, recovered: true },
+      ],
+      prefs: {},
+    })
+    const state = parseState(doc)
+    expect(state.trackers[0]).toEqual({
+      id: "creatine",
+      name: "Creatine",
+      unit: "g",
+      mode: "sum",
+      target: 5,
+      nutrition: true,
+      recovered: true,
+    })
+    expect(state.readings).toHaveLength(1)
+  })
+
+  it("drops a tracker it can't trust rather than loading half of one", () => {
+    const doc = JSON.stringify({
+      version: 2,
+      sets: [],
+      readings: [
+        { id: "r1", trackerId: "x", date: "d", loggedAt: "x", value: "not a number" },
+        { id: "r2", trackerId: "x", date: "d", loggedAt: "x", value: 5 },
+      ],
+      trackers: [
+        { id: "nounit", name: "No unit", mode: "sum" },
+        { id: "badunit", name: "Bad unit", unit: "furlongs", mode: "sum" },
+        { name: "No id", unit: "g", mode: "sum" },
+      ],
+      prefs: {},
+    })
+    const state = parseState(doc)
+    expect(state.trackers).toEqual([])
+    // A reading whose value isn't a number would render as NaN and push NaN.
+    expect(state.readings).toHaveLength(1)
+    expect(state.readings[0]?.id).toBe("r2")
+  })
+
+  it("defaults an unrecognised mode to summing", () => {
+    const doc = JSON.stringify({
+      version: 2,
+      trackers: [{ id: "x", name: "X", unit: "g", mode: "nonsense" }],
+    })
+    expect(parseState(doc).trackers[0]?.mode).toBe("sum")
+  })
+})

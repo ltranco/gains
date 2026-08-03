@@ -107,8 +107,17 @@ export async function pushLog(
   const pushed = { ...(config.pushed ?? {}) }
   let written = 0
 
-  // An edited entry is rewritten at least a millisecond past where it used to live, so the
-  // tombstone retracting the original cannot swallow the correction as well.
+  /**
+   * An edited entry is rewritten at least a millisecond past where it used to live, so the
+   * tombstone retracting the original cannot swallow the correction as well.
+   *
+   * `fp` is deliberately carried across rather than recomputed from the shifted `loggedAt`. The
+   * fingerprint that gets recorded has to be one the *local* entry can produce again, or the next
+   * plan compares it against a string that will never match: the entry looks edited forever,
+   * every push re-tombstones it and writes another copy a millisecond further along, and Settings
+   * sits on a permanent "1 edited to sync". That was a real bug, and `remote.test.ts` holds the
+   * line on it.
+   */
   const previous = new Map(plan.tombstones.map((t) => [t.id, t.at]))
   const rewritten = plan.changed.map((item) => {
     const old = previous.get(item.id) ?? 0
@@ -116,16 +125,6 @@ export async function pushLog(
     return wanted > old ? item : { ...item, loggedAt: new Date(old + 1).toISOString() }
   })
   const outgoing = [...plan.fresh, ...rewritten]
-
-  /**
-   * The fingerprint to *record* is the local entry's own, never the rewritten copy's.
-   *
-   * A rewritten entry carries a shifted `loggedAt`, which is part of the fingerprint. Storing
-   * that meant the next plan compared the local entry against a fingerprint it could never
-   * produce, so an edited set looked edited again forever: every push re-tombstoned it, wrote
-   * another copy a millisecond further along, and Settings sat on a permanent "1 edited to sync".
-   */
-  const localFp = new Map(items.map((i) => [i.id, i.fp]))
 
   // Tombstones first. If the run dies halfway, the store having forgotten an entry it should
   // forget is a better resting place than it holding one it shouldn't.
@@ -161,9 +160,8 @@ export async function pushLog(
     for (const item of batch) {
       const at = stampById.get(item.id)
       const prefix = prefixById.get(item.id)
-      const fp = localFp.get(item.id)
-      if (at === undefined || prefix === undefined || fp === undefined) continue
-      pushed[item.id] = { fp, at, prefix }
+      if (at === undefined || prefix === undefined) continue
+      pushed[item.id] = { fp: item.fp, at, prefix }
     }
   }
 

@@ -192,6 +192,9 @@ export function parseTrackerValue(
   unit: TrackerUnit,
   u: UnitSystem,
 ): number | undefined {
+  // Blank is not zero. `Number("")` is 0, so without this an empty field would log a real
+  // sample of nothing — and a zero-calorie meal in the store is indistinguishable from a fast.
+  if (!input.trim()) return undefined
   const n = numeric(input)
   if (!Number.isFinite(n) || n < 0) return undefined
   if (unit === "cm") {

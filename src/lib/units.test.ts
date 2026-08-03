@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest"
 
 import {
   formatCount,
+  formatTracker,
   formatDistance,
   formatDuration,
   formatLoad,
   parseDistance,
   parseDuration,
   parseReps,
+  parseTrackerValue,
   parseWeight,
+  trackerUnit,
+  trackerValue,
   weightValue,
 } from "./units"
 
@@ -123,5 +127,56 @@ describe("conversion never stores an unloggable number", () => {
   it("rounds distance to the metre", () => {
     expect(parseDistance("5", "metric")).toBe(5000)
     expect(parseDistance("3.1", "imperial")).toBe(Math.round(parseDistance("3.1", "imperial")!))
+  })
+})
+
+describe("tracker units", () => {
+  it("shows centimetres as inches without changing what is stored", () => {
+    // Same rule as kilograms: imperial is a display transform, never a stored value.
+    expect(trackerValue(81.3, "cm", "metric")).toBe("81.3")
+    expect(trackerValue(81.3, "cm", "imperial")).toBe("32")
+    expect(trackerUnit("cm", "metric")).toBe("cm")
+    expect(trackerUnit("cm", "imperial")).toBe("in")
+  })
+
+  it("survives an inch value round tripping through storage", () => {
+    // 32 in -> 81.28 cm, snapped to the millimetre, and back. Without the snap you store
+    // 81.28000000000001 and put a number on the dashboard no tape measure produced.
+    const stored = parseTrackerValue("32", "cm", "imperial")
+    expect(stored).toBe(81.3)
+    expect(trackerValue(stored!, "cm", "imperial")).toBe("32")
+  })
+
+  it("leaves the unit-neutral ones alone in both systems", () => {
+    // A gram is a gram. Nobody wants calories in kilojoules because they switched to pounds.
+    for (const u of ["metric", "imperial"] as const) {
+      expect(trackerValue(2140, "kcal", u)).toBe("2,140")
+      expect(trackerUnit("kcal", u)).toBe("kcal")
+      expect(trackerValue(165, "g", u)).toBe("165")
+    }
+  })
+
+  it("groups thousands so a calorie total is readable", () => {
+    expect(trackerValue(1000, "kcal", "metric")).toBe("1,000")
+    expect(parseTrackerValue("2,140", "kcal", "metric")).toBe(2140)
+  })
+
+  it("rounds each unit to what was actually measured", () => {
+    // Calories off a label are whole; a tape measure reads to the millimetre.
+    expect(parseTrackerValue("620.7", "kcal", "metric")).toBe(621)
+    expect(parseTrackerValue("81.47", "cm", "metric")).toBe(81.5)
+  })
+
+  it("refuses nonsense and negatives", () => {
+    expect(parseTrackerValue("", "kcal", "metric")).toBeUndefined()
+    expect(parseTrackerValue("abc", "kcal", "metric")).toBeUndefined()
+    expect(parseTrackerValue("-5", "kcal", "metric")).toBeUndefined()
+  })
+
+  it("writes a count and a percentage tight against their sign", () => {
+    const count = { id: "coffee", name: "Coffee", unit: "count", mode: "sum" } as const
+    const pct = { id: "bodyfat", name: "Body fat", unit: "pct", mode: "point" } as const
+    expect(formatTracker(3, count, "metric")).toBe("3×")
+    expect(formatTracker(14.5, pct, "metric")).toBe("14.5%")
   })
 })
