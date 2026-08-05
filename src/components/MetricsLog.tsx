@@ -39,16 +39,12 @@ export function MetricsLog({
 
   return (
     <section className="border-b px-3 py-3 last:border-b-0">
-      {/* No add button on the heading: the caret beside Food already opens this, and a second
-          copy here was duplication. */}
-      <div className="mb-1 pl-1">
-        <h2
-          className="truncate text-[14px] font-normal tracking-[-0.005em]"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Metrics
-        </h2>
-      </div>
+      <h2
+        className="mb-1 truncate pl-1 text-[14px] font-normal tracking-[-0.005em]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Metrics
+      </h2>
 
       <ul className="flex flex-col">
         {rows.map(({ reading, tracker }) => {

@@ -139,9 +139,14 @@ Node 20.
     something.
 
 15. **The day view has one row grammar, used three times.** Exercise sets, food and metrics are
-    each a section with a heading and rows of *time, name, value, duplicate, delete*, and the row
-    itself opens the editor. Three kinds of thing are logged here and there is exactly one way to
-    read a row back — don't invent a fourth layout for the next one.
+    each a section whose heading is *only* its title, over rows of *time, name, value, duplicate,
+    delete*, with the row itself opening the editor. Three kinds of thing are logged here and there
+    is exactly one way to read a row back — don't invent a fourth layout for the next one.
+
+    Nothing else goes in a section heading. A per-exercise add button and a running calorie total
+    both lived there and both came out: the add button duplicated Duplicate on the rows beneath it,
+    which is the faster route to another set of the same movement anyway, and the calorie total
+    restated the rings sitting directly above at four times the size.
 
 16. **A record is a record at the moment it was logged**, for both sets and metrics, so old ones
     stay badged and the day reads as a history of when you moved the needle. A metric's direction

@@ -5,13 +5,12 @@ import { formatTime } from "@/lib/date"
 import type { DayEntry } from "@/lib/select"
 import type { ClockFormat, Exercise, SetEntry, UnitSystem } from "@/lib/types"
 import { summarise } from "./SetEntrySheet"
-import { Duplicate, Plus, Trash } from "./icons"
+import { Duplicate, Trash } from "./icons"
 
 export function DayLog({
   entries,
   units,
   clock,
-  onAddTo,
   onEdit,
   onDuplicate,
   onDelete,
@@ -20,7 +19,6 @@ export function DayLog({
   entries: DayEntry[]
   units: UnitSystem
   clock: ClockFormat
-  onAddTo: (ex: Exercise) => void
   onEdit: (ex: Exercise, set: SetEntry) => void
   onDuplicate: (set: SetEntry) => void
   onDelete: (set: SetEntry, ex: Exercise) => void
@@ -31,25 +29,16 @@ export function DayLog({
     <ul className="flex flex-col">
       {entries.map((entry) => (
         <li key={entry.exercise.id} className="border-b px-3 py-3 last:border-b-0">
-          <div className="mb-1 flex items-baseline justify-between gap-3 pl-1">
-            {/* Light against the mono 700 values below it — the exercise names the row, the
-                numbers are what you're actually reading. */}
-            <h2
-              className="min-w-0 truncate text-[14px] font-normal tracking-[-0.005em]"
-              style={{ color: "var(--text-muted)" }}
-            >
-              {displayName(entry.exercise)}
-            </h2>
-            <button
-              type="button"
-              onClick={() => onAddTo(entry.exercise)}
-              aria-label={`Add a set of ${displayName(entry.exercise)}`}
-              className="flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--bg-hover)]"
-              style={{ color: "var(--text-faint)" }}
-            >
-              <Plus size={15} />
-            </button>
-          </div>
+          {/* Light against the mono 700 values below it — the exercise names the row, the
+              numbers are what you're actually reading. A heading and nothing else: the add
+              button that used to sit here duplicated Duplicate on the rows below, which is the
+              faster way to another set of the same movement anyway. */}
+          <h2
+            className="mb-1 truncate pl-1 text-[14px] font-normal tracking-[-0.005em]"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {displayName(entry.exercise)}
+          </h2>
 
           <ul className="flex flex-col">
             {entry.sets.map((set) => (

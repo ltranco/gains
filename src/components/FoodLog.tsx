@@ -1,9 +1,8 @@
 "use client"
 
 import { formatTime } from "@/lib/date"
-import { foodName, macroTotals, summariseFood } from "@/lib/food"
+import { foodName, summariseFood } from "@/lib/food"
 import type { ClockFormat, FoodEntry } from "@/lib/types"
-import { formatCount } from "@/lib/units"
 import { Duplicate, Trash } from "./icons"
 
 /**
@@ -38,30 +37,18 @@ export function FoodLog({
   onDelete: (food: FoodEntry) => void
 }) {
   if (foods.length === 0) return null
-  const totals = macroTotals(foods)
 
   return (
     <section className="border-b px-3 py-3 last:border-b-0">
-      <div className="mb-1 flex items-baseline justify-between gap-3 pl-1">
-        <h2
-          className="min-w-0 truncate text-[14px] font-normal tracking-[-0.005em]"
-          style={{ color: "var(--text-muted)" }}
-        >
-          Food
-        </h2>
-
-        {/* The day's total beside the heading rather than as a footer row: it's the headline, and
-            the rows below it are the working. No add button here — the bottom bar already has one
-            in thumb range, and a second copy at the top of the section was pure duplication. */}
-        {foods.length > 1 && (
-          <span
-            className="nums-quiet shrink-0 text-[12px]"
-            style={{ color: "var(--text-faint)" }}
-          >
-            {formatCount(totals.kcal)} kcal
-          </span>
-        )}
-      </div>
+      {/* A heading and nothing else, matching the exercise blocks. The day's calorie total lived
+          here for a while, which was one more number on a screen whose whole top strip is already
+          that number — the rings say it, larger and against its target. */}
+      <h2
+        className="mb-1 truncate pl-1 text-[14px] font-normal tracking-[-0.005em]"
+        style={{ color: "var(--text-muted)" }}
+      >
+        Food
+      </h2>
 
       <ul className="flex flex-col">
         {foods.map((food) => (

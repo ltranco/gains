@@ -193,7 +193,6 @@ export default function Today() {
                   entries={entries}
                   units={state.prefs.units}
                   clock={state.prefs.clock}
-                  onAddTo={(exercise) => setEntry({ exercise, editing: null })}
                   onEdit={(exercise, set) => setEntry({ exercise, editing: set })}
                   onDuplicate={(set) => duplicateSet(set.id)}
                   onDelete={handleDeleteSet}
