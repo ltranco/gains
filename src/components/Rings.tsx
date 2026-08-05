@@ -105,9 +105,11 @@ function RingCell({
       aria-label={`${macro.label}: ${formatCount(total)} of ${formatCount(target)} ${macro.unit}. Add food.`}
       className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-0.5 transition-colors hover:bg-[var(--bg-hover)]"
     >
+      {/* The dial springs in; the arc inside it does not. See globals.css — bouncing the fill
+          itself meant drawing more than the value and taking it back. */}
       <span
-        className="relative flex shrink-0 items-center justify-center"
-        style={{ width: SIZE, height: SIZE }}
+        className="ring-pop relative flex shrink-0 items-center justify-center"
+        style={{ width: SIZE, height: SIZE, animationDelay: `${index * 110}ms` }}
       >
         <Arc
           fraction={fraction}

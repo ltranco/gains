@@ -289,10 +289,19 @@ Verified against real VictoriaMetrics on the production flags, the real shim fro
    so the lap carries its own gap.
 
    **Never put a CSS filter on something whose geometry animates.** The filter region has to be
-   re-rasterised every frame, and only the overflow arc had one, which is exactly why only
-   over-target rings flickered. Same caution for `color-mix()` in an SVG presentation attribute —
-   the overflow tints are flat hexes in `globals.css` now, resolved once. If you touch the rings,
-   look at one at 1.3× on a phone; none of this is visible in a screenshot or a test.
+   re-rasterised every frame. Same caution for `color-mix()` in an SVG presentation attribute — the
+   overflow tints are flat hexes in `globals.css` now, resolved once.
+
+7. **The ring fill is monotonic, and must stay that way.** An overshoot easing on
+   `stroke-dashoffset` looks like a spring and behaves like a lie: measured, the overflow lap filled
+   to 34.4% of a lap and then retreated to its true 31.8%, holding a number that was never true for
+   about 400ms. On a needle the way past means nothing; on a fill the extra arc is
+   indistinguishable from data. Bounce belongs on `.ring-pop`, which scales the dial and reports
+   nothing.
+
+   To check either of these, sample `getComputedStyle(arc).strokeDashoffset` across the animation
+   and confirm the peak equals the settled value. A screenshot cannot see it and neither can the
+   suite — this is the one part of the app where the only test is a measurement taken by hand.
 
 ## Tests
 
