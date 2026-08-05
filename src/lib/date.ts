@@ -91,6 +91,50 @@ export function parseDateTimeLocal(value: string): Date | null {
 }
 
 /**
+ * What a `datetime-local` field is asking to change an entry's instant to, or why it can't.
+ *
+ * `unchanged` covers the overwhelmingly common save, where the field was never touched. Keeping it
+ * distinct matters: an entry whose stored time is *already* in the future — imported data, a clock
+ * that was wrong — must still be editable, and treating "didn't move it" as "moved it into the
+ * future" would lock the sheet.
+ */
+export type InstantEdit =
+  | { kind: "ok"; at: Date }
+  | { kind: "unchanged" }
+  | { kind: "blank" }
+  | { kind: "future" }
+
+/**
+ * Resolves an edited `loggedAt`, and says out loud when it won't.
+ *
+ * This rule used to live inline in all three entry sheets as
+ * `parsed && parsed.getTime() <= Date.now() ? parsed : null`, which had two problems. It was
+ * duplicated three times and therefore untested — `lib/date.ts` even says the not-in-the-future
+ * question belongs to the caller, and then three callers each answered it the same way by hand.
+ * Worse, `null` meant both "nothing to do" and "no, that's in the future", so picking a time later
+ * than the clock silently kept the old one while the rest of the edit saved. You'd correct a set
+ * to 23:55, hit Save, and watch it stay at 06:00 with no explanation.
+ *
+ * An entry still cannot be logged in the future: it would sort ahead of everything and land on a
+ * day the date picker won't go to. The difference is that now the sheet can say so.
+ *
+ * @param value what the field holds
+ * @param original what it held when the sheet opened
+ */
+export function editedInstant(
+  value: string,
+  original: string,
+  now: number = Date.now(),
+): InstantEdit {
+  if (value === original) return { kind: "unchanged" }
+  const parsed = parseDateTimeLocal(value)
+  // A half-typed or emptied field is not an instruction to move anything.
+  if (!parsed) return { kind: "blank" }
+  if (parsed.getTime() > now) return { kind: "future" }
+  return { kind: "ok", at: parsed }
+}
+
+/**
  * `2026-07-31 14:32:58` — always 24-hour, never am/pm, seconds included.
  *
  * Not `toLocaleString()`, which picks 12- or 24-hour from the browser locale and lands on

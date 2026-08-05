@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 
-import { dateTimeLocalValue, parseDateTimeLocal, toDayKey } from "@/lib/date"
+import { dateTimeLocalValue, editedInstant, toDayKey } from "@/lib/date"
 import { MACROS, energyOf, valueOf, type MacroKey } from "@/lib/food"
 import type { FoodEntry } from "@/lib/types"
 import { useStore } from "@/providers/StoreProvider"
@@ -122,8 +122,12 @@ export function FoodSheet({
       // Moving a food changes its identity remotely, so it takes the same repair path as any other
       // edit: the old samples are retracted and rewritten at the new instant. `date` moves with it,
       // since that is what the day view groups on.
-      const parsed = parseDateTimeLocal(draft.at)
-      const moved = parsed && parsed.getTime() <= Date.now() ? parsed : null
+      const edit = editedInstant(draft.at, dateTimeLocalValue(editing.loggedAt))
+      if (edit.kind === "future") {
+        setError("That time is in the future.")
+        return
+      }
+      const moved = edit.kind === "ok" ? edit.at : null
       updateFood(editing.id, {
         ...values,
         ...(moved ? { loggedAt: moved.toISOString(), date: toDayKey(moved) } : {}),

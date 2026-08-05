@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { displayName } from "@/lib/catalog"
-import { dateTimeLocalValue, parseDateTimeLocal, toDayKey } from "@/lib/date"
+import { dateTimeLocalValue, editedInstant, toDayKey } from "@/lib/date"
 import { lastSetOf } from "@/lib/select"
 import type { Exercise, SetEntry, UnitSystem } from "@/lib/types"
 import {
@@ -98,10 +98,12 @@ export function SetEntrySheet({
       // Moving a set changes its identity remotely, so it takes the same repair path as any
       // other edit: the old samples are retracted and rewritten at the new instant. `date` has
       // to move with it, since that is what the day view groups on.
-      // The input carries a `max`, but a typed value can still slip past it, and a set in the
-      // future would sort ahead of everything and never appear on a day you can navigate to.
-      const parsed = parseDateTimeLocal(draft.at)
-      const moved = parsed && parsed.getTime() <= Date.now() ? parsed : null
+      const edit = editedInstant(draft.at, dateTimeLocalValue(editing.loggedAt))
+      if (edit.kind === "future") {
+        setError("That time is in the future.")
+        return
+      }
+      const moved = edit.kind === "ok" ? edit.at : null
       updateSet(editing.id, {
         ...built.value,
         ...(moved ? { loggedAt: moved.toISOString(), date: toDayKey(moved) } : {}),

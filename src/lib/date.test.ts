@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   dateTimeLocalValue,
+  editedInstant,
   formatStamp,
   formatTime,
   fromDayKey,
@@ -145,5 +146,57 @@ describe("datetime-local round trip", () => {
     expect(parseDateTimeLocal("2026-07-31T09:14:03")).not.toBeNull()
     expect(parseDateTimeLocal("nonsense")).toBeNull()
     expect(parseDateTimeLocal("")).toBeNull()
+  })
+})
+
+describe("editing an entry's time", () => {
+  // A fixed "now" so these mean the same thing at any hour of the day the suite runs.
+  const NOW = new Date("2026-08-04T23:38:00-07:00").getTime()
+  const edit = (value: string, original = "2026-08-04T06:00") =>
+    editedInstant(value, original, NOW)
+
+  it("moves an entry backwards", () => {
+    const r = edit("2026-08-04T20:00")
+    expect(r.kind).toBe("ok")
+    if (r.kind !== "ok") return
+    expect(r.at.getHours()).toBe(20)
+    expect(toDayKey(r.at)).toBe("2026-08-04")
+  })
+
+  it("moves an entry to another day", () => {
+    // `date` is what the day view groups on, so the caller has to move it with the instant.
+    const r = edit("2026-08-01T09:15")
+    expect(r.kind).toBe("ok")
+    if (r.kind !== "ok") return
+    expect(toDayKey(r.at)).toBe("2026-08-01")
+    expect(r.at.getHours()).toBe(9)
+  })
+
+  it("refuses a time later than now, instead of silently keeping the old one", () => {
+    // This is the bug. All three sheets did `parsed.getTime() <= Date.now() ? parsed : null`, and
+    // null meant both "nothing to do" and "no". Correcting a set to 23:55 at 23:38 saved the
+    // weight and the reps and left the time at 06:00, with nothing said.
+    expect(edit("2026-08-04T23:55").kind).toBe("future")
+    expect(edit("2026-08-05T06:00").kind).toBe("future")
+    // One minute past the clock is still the future; there is no grace band to be wrong inside.
+    expect(edit("2026-08-04T23:39").kind).toBe("future")
+  })
+
+  it("accepts the current minute, which the seconds hand has already passed", () => {
+    // parseDateTimeLocal zeroes the seconds, so 23:38 resolves to 23:38:00 — before 23:38:00.
+    expect(edit("2026-08-04T23:38").kind).toBe("ok")
+  })
+
+  it("leaves an untouched field alone without judging it", () => {
+    // The overwhelmingly common save. It also keeps an entry whose stored time is already in the
+    // future — imported data, a wrong clock — editable, rather than locking the sheet.
+    expect(edit("2026-08-04T06:00").kind).toBe("unchanged")
+    expect(editedInstant("2026-09-01T06:00", "2026-09-01T06:00", NOW).kind).toBe("unchanged")
+  })
+
+  it("treats a blank or half-typed field as no instruction", () => {
+    for (const value of ["", "2026-08-", "not a time", "2026-08-04T"]) {
+      expect(edit(value).kind, value).toBe("blank")
+    }
   })
 })

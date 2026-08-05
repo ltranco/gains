@@ -78,6 +78,12 @@ Node 20.
 5. **Day keys are local, built by hand.** `toDayKey()` never goes through `toISOString()`,
    which converts to UTC first and would file a 9pm Pacific set under tomorrow.
 
+   **An edited `loggedAt` goes through `editedInstant()`, which is in `lib/date.ts` and tested.**
+   The rule — nothing in the future, an untouched field is not an instruction — used to be one
+   inline expression repeated in all three entry sheets, where `null` meant both "nothing to do"
+   and "no, that's in the future". Picking a time later than the clock therefore saved every other
+   field and left the time alone without a word. If you add a fourth sheet, call the function.
+
 6. **No touch-only affordances.** No long-press, no swipe-to-delete. This is a responsive
    site, so every action is a visible control that works with a finger, a mouse and a
    keyboard. Delete is one tap, made safe by an undo toast rather than a confirm dialog.
@@ -289,7 +295,7 @@ would have caught the last thing that broke in that file.
 
 | File | Guards against |
 | --- | --- |
-| `date.test.ts` | UTC day drift, `loggedAt` ignoring the selected day, DST either side, 24-hour stamps |
+| `date.test.ts` | UTC day drift, `loggedAt` ignoring the selected day, DST either side, 24-hour stamps, a future time being silently ignored |
 | `units.test.ts` | imperial display corrupting stored kg or cm, comma grouping breaking re-parse, a blank field parsing as zero |
 | `catalog.test.ts` | duplicate metric prefixes, kind misclassification, fuzzy ranking |
 | `trackers.test.ts` | one metric name producible two ways, HealthKit's or a macro's slug being claimed, a rename moving a slug, rebuild-from-remote |

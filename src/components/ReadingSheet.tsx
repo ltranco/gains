@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 
-import { dateTimeLocalValue, parseDateTimeLocal, toDayKey } from "@/lib/date"
+import { dateTimeLocalValue, editedInstant, toDayKey } from "@/lib/date"
 import { dayTotal } from "@/lib/select"
 import type { Reading, Tracker, UnitSystem } from "@/lib/types"
 import { formatTracker, parseTrackerValue, trackerUnit, trackerValue } from "@/lib/units"
@@ -75,8 +75,12 @@ export function ReadingSheet({
       // Moving a reading changes its identity remotely, so it takes the same repair path as any
       // other edit: the old sample is retracted and rewritten at the new instant. `date` moves
       // with it, since that is what the day view groups on.
-      const moved = parseDateTimeLocal(at)
-      const when = moved && moved.getTime() <= Date.now() ? moved : null
+      const edit = editedInstant(at, dateTimeLocalValue(editing.loggedAt))
+      if (edit.kind === "future") {
+        setError("That time is in the future.")
+        return
+      }
+      const when = edit.kind === "ok" ? edit.at : null
       updateReading(editing.id, {
         value: parsed,
         ...(when ? { loggedAt: when.toISOString(), date: toDayKey(when) } : {}),
