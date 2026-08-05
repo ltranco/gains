@@ -61,6 +61,20 @@
   --ring-4: #c170bb;
   --ring-track: rgba(0, 0, 0, 0.10);
 
+  /*
+   * The lap drawn when you go past the target: each hue mixed 42% with white, resolved to a flat
+   * hex rather than left as a `color-mix()`.
+   *
+   * It was a `color-mix()` inside an SVG `stroke` presentation attribute, alongside a
+   * `drop-shadow` filter, and that arc flickered while it animated — the only arc that did,
+   * because it was the only one with either. A filter over geometry that changes every frame has
+   * to re-rasterise every frame. Flat hexes and no filter cannot flicker.
+   */
+  --ring-1-over: #eac1a7;
+  --ring-2-over: #addac0;
+  --ring-3-over: #a4c0e3;
+  --ring-4-over: #e7c3e3;
+
   color-scheme: light;
 }
 
@@ -96,6 +110,11 @@
     --ring-4: #c170bb;
     --ring-track: rgba(255, 255, 255, 0.13);
 
+    --ring-1-over: #eac1a7;
+    --ring-2-over: #b0ddc3;
+    --ring-3-over: #a4c0e3;
+    --ring-4-over: #e7c3e3;
+
     color-scheme: dark;
   }
 }
@@ -129,6 +148,11 @@
   --ring-3: #2769b7;
   --ring-4: #c170bb;
   --ring-track: rgba(255, 255, 255, 0.13);
+
+  --ring-1-over: #eac1a7;
+  --ring-2-over: #b0ddc3;
+  --ring-3-over: #a4c0e3;
+  --ring-4-over: #e7c3e3;
 
   color-scheme: dark;
 }
@@ -374,8 +398,13 @@ input[type="number"] {
  * The overshoot in the easing is the whole character of it — the arc runs slightly past and
  * settles, which is what makes it feel like a dial rather than a progress bar.
  */
+/*
+ * Slower than it was, and it overshoots its value before settling — on a dial that reads as the
+ * needle springing into place rather than sliding to a stop. Overshoot on the dash offset is safe:
+ * past the target the offset simply goes negative and the arc laps a fraction further round.
+ */
 .ring-arc {
-  transition: stroke-dashoffset 680ms cubic-bezier(0.16, 1.02, 0.3, 1);
+  transition: stroke-dashoffset 920ms cubic-bezier(0.34, 1.5, 0.5, 1);
 }
 
 /*

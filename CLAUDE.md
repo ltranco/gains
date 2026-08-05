@@ -280,12 +280,19 @@ Verified against real VictoriaMetrics on the production flags, the real shim fro
    same Go shim and the same `-dedup.minScrapeInterval=1ms` that make the traps above real. That
    is where the sync layer was actually verified.
 
-6. **The over-target ring took three goes, and only a screenshot could judge any of them.** A
-   translucent arc over an opaque arc of the same hue is invisible — it's just that hue. Dimming
-   the lap underneath made it visible but said the wrong thing: at 1.2× the only bright arc left
-   was the 20% overflow, so a day well past its target read as barely started. What works is a
-   full-strength completed lap with the overflow tinted towards white. If you touch the rings, look
-   at a screenshot at 1.3×.
+6. **The over-target ring took four goes, and no test could judge any of them.** A translucent arc
+   over an opaque arc of the same hue is invisible — it's just that hue. Dimming the lap underneath
+   made it visible but said the wrong thing: at 1.2× the only bright arc left was the 20% overflow,
+   so a day well past its target read as barely started. A full-strength lap with the overflow
+   tinted towards white and a `drop-shadow` under it looked right and *flickered the entire time it
+   animated*. What works is that same tint with a hairline of `--bg` drawn under it, slightly wider,
+   so the lap carries its own gap.
+
+   **Never put a CSS filter on something whose geometry animates.** The filter region has to be
+   re-rasterised every frame, and only the overflow arc had one, which is exactly why only
+   over-target rings flickered. Same caution for `color-mix()` in an SVG presentation attribute —
+   the overflow tints are flat hexes in `globals.css` now, resolved once. If you touch the rings,
+   look at one at 1.3× on a phone; none of this is visible in a screenshot or a test.
 
 ## Tests
 

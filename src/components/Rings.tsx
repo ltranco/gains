@@ -45,6 +45,14 @@ const HUE: Record<MacroKey, string> = {
   fat: "var(--ring-4)",
 }
 
+/** The paler lap drawn past the target. See globals.css for why these are flat hexes. */
+const HUE_OVER: Record<MacroKey, string> = {
+  kcal: "var(--ring-1-over)",
+  protein: "var(--ring-2-over)",
+  carbs: "var(--ring-3-over)",
+  fat: "var(--ring-4-over)",
+}
+
 /** Sweeps the arcs in from empty on mount. Remount — a new `key` — replays it. */
 function useArmed(): boolean {
   const [armed, setArmed] = useState(false)
@@ -104,8 +112,9 @@ function RingCell({
         <Arc
           fraction={fraction}
           colour={HUE[macro.key]}
+          over={HUE_OVER[macro.key]}
           armed={armed}
-          delay={index * 80}
+          delay={index * 110}
         />
         {/* Inside the ring, always — it's the number you came for. In the ring's own hue rather
             than the text colour: it names which arc it belongs to without a second label, and the
@@ -150,15 +159,23 @@ function RingCell({
  * was the 20% overflow, so a day well past its target read at a glance as barely started. What
  * works is keeping the completed lap at full strength and tinting the overflow towards white — the
  * ring stays emphatically full, and the pale arc on top is the "and then some".
+ *
+ * Reading as one band *lying over* another is done with a hairline of the page colour drawn under
+ * the overflow lap, slightly wider than it, so the lap carries its own gap around it. That started
+ * out as a `drop-shadow` filter, which looked right and flickered the whole time it animated: a
+ * filter over geometry that changes every frame has to re-rasterise every frame, and only this arc
+ * had one, which is why only over-target rings flickered. Two circles cost nothing and cannot.
  */
 function Arc({
   fraction,
   colour,
+  over,
   armed,
   delay,
 }: {
   fraction: number
   colour: string
+  over: string
   armed: boolean
   delay: number
 }) {
@@ -194,25 +211,37 @@ function Arc({
           style={{ transitionDelay: `${delay}ms` }}
         />
         {second > 0 && (
-          <circle
-            className="ring-arc"
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={r}
-            fill="none"
-            // Same hue pulled towards white, so it reads over the lap it sits on in either theme.
-            stroke={`color-mix(in oklab, ${colour} 42%, white)`}
-            strokeWidth={STROKE}
-            strokeLinecap="round"
-            strokeDasharray={c}
-            strokeDashoffset={armed ? c * (1 - second) : c}
-            style={{
-              transitionDelay: `${delay + 240}ms`,
-              // The shadow is what sells it. Tint alone reads as a two-tone ring; a cast shadow
-              // reads as one band physically lying over another and wrapping round behind it.
-              filter: "drop-shadow(0 0 1.5px rgba(0,0,0,0.45))",
-            }}
-          />
+          <>
+            {/* The gap. Page-coloured and wider than the lap above it, so the overflow reads as a
+                band resting on the one beneath rather than as a two-tone ring. Shares every
+                animation value with it, so the two never come apart. */}
+            <circle
+              className="ring-arc"
+              cx={SIZE / 2}
+              cy={SIZE / 2}
+              r={r}
+              fill="none"
+              stroke="var(--bg)"
+              strokeWidth={STROKE + 3}
+              strokeLinecap="round"
+              strokeDasharray={c}
+              strokeDashoffset={armed ? c * (1 - second) : c}
+              style={{ transitionDelay: `${delay + 260}ms` }}
+            />
+            <circle
+              className="ring-arc"
+              cx={SIZE / 2}
+              cy={SIZE / 2}
+              r={r}
+              fill="none"
+              stroke={over}
+              strokeWidth={STROKE}
+              strokeLinecap="round"
+              strokeDasharray={c}
+              strokeDashoffset={armed ? c * (1 - second) : c}
+              style={{ transitionDelay: `${delay + 260}ms` }}
+            />
+          </>
         )}
       </g>
     </svg>
