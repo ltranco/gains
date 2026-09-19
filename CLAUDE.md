@@ -212,6 +212,13 @@ Because samples are per-set, the natural Grafana queries are simply correct:
 | `count_over_time(health_barbell_squat_volume[1d])` | sets |
 | `sum(sum_over_time({__name__=~"health_.+_volume"}[1d]))` | volume across all exercises |
 
+Correct, that is, **until anything has been deleted or edited.** None of those queries can see a
+tombstone, so they count retracted sets. The dashboards in `~/dev/metrics` don't use them: they
+fetch `metric[$__range]` as an instant query, which returns raw samples at their real
+millisecond timestamps, and drop in panel JS whatever a `_deleted` sample names. Bucketing first
+doesn't work — an edit's rewrite lands 1ms after its tombstone, in the same bucket, and is voided
+with it. See trap 14 in the metrics repo's `CLAUDE.md`.
+
 Config lives under **its own** localStorage key, not inside `GainsState` — that document gets
 exported, and a bearer token has no business travelling inside it.
 
